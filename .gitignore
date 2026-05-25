@@ -1,0 +1,56 @@
+# ===== SECRETS - NEVER COMMIT =====
+config.local.properties
+
+# ===== MAVEN BUILD =====
+target/
+*.class
+*.jar
+*.war
+
+# ===== TEST OUTPUT =====
+test-output/
+allure-results/
+allure-report/
+
+# ===== SCREENSHOTS =====
+src/test/resources/screenshots/
+
+# ===== IDE FILES =====
+.eclipse/
+.idea/
+*.iml
+.settings/
+.project
+.classpath
+.factorypath
+
+# ===== OS FILES =====
+.DS_Store
+Thumbs.db
+
+# ===== LOGS =====
+*.log
+logs/
+
+# ===== GENERATED TEST FILES =====
+# Comment these out if you want to commit generated scripts
+src/test/java/generated/
+src/test/java/pages/
+
+# ===== ADDED =====
+# WebDriver binaries downloaded by WebDriverManager
+.wdm/
+
+# Eclipse workspace metadata
+.metadata/
+bin/
+
+# Maven wrapper (if not using)
+.mvn/
+
+# Environment files
+.env
+*.env
+
+# Allure commandline
+allure-*/
