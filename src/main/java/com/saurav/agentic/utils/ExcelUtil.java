@@ -93,10 +93,10 @@ public class ExcelUtil {
 
         // Headers
         String[] headers = {
-            "Test Case ID", "Test Case Name", "Description", "Preconditions",
-            "Test Steps", "Expected Result", "Test Type", "Priority",
-            "Component", "Automation Feasible"
-        };
+        	    "Test Case ID", "Test Case Name", "Description", "Preconditions",
+        	    "Test Steps", "Test Data", "Expected Result", "Test Type", "Priority",    // ← added Test Data
+        	    "Component", "Automation Feasible"
+        	};
 
         Row headerRow = sheet.createRow(0);
         for (int i = 0; i < headers.length; i++) {
@@ -114,11 +114,12 @@ public class ExcelUtil {
             row.createCell(2).setCellValue(tc.getDescription());
             row.createCell(3).setCellValue(tc.getPreconditions());
             row.createCell(4).setCellValue(tc.getTestSteps());
-            row.createCell(5).setCellValue(tc.getExpectedResult());
-            row.createCell(6).setCellValue(tc.getTestType());
-            row.createCell(7).setCellValue(tc.getPriority());
-            row.createCell(8).setCellValue(tc.getComponent());
-            row.createCell(9).setCellValue(tc.isAutomationFeasible() ? "Yes" : "No");
+            row.createCell(5).setCellValue(tc.getTestData());           
+            row.createCell(6).setCellValue(tc.getExpectedResult());     
+            row.createCell(7).setCellValue(tc.getTestType());           
+            row.createCell(8).setCellValue(tc.getPriority());           
+            row.createCell(9).setCellValue(tc.getComponent());          
+            row.createCell(10).setCellValue(tc.isAutomationFeasible() ? "Yes" : "No"); 
         }
 
         // Auto size columns
@@ -153,12 +154,13 @@ public class ExcelUtil {
                 tc.setDescription(getCellValue(row, 2));
                 tc.setPreconditions(getCellValue(row, 3));
                 tc.setTestSteps(getCellValue(row, 4));
-                tc.setExpectedResult(getCellValue(row, 5));
-                tc.setTestType(getCellValue(row, 6));
-                tc.setPriority(getCellValue(row, 7));
-                tc.setComponent(getCellValue(row, 8));
+                tc.setTestData(getCellValue(row, 5)); 
+                tc.setExpectedResult(getCellValue(row, 6));
+                tc.setTestType(getCellValue(row, 7));
+                tc.setPriority(getCellValue(row, 8));
+                tc.setComponent(getCellValue(row, 9));
                 tc.setAutomationFeasible(
-                        getCellValue(row, 9).equalsIgnoreCase("Yes"));
+                        getCellValue(row, 10).equalsIgnoreCase("Yes"));
 
                 testCases.add(tc);
             }

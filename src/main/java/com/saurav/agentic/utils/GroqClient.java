@@ -38,20 +38,31 @@ public class GroqClient {
     }
 
     /**
-     * Send a prompt to Groq AI and get response
-     *
-     * @param systemPrompt - Instructions for the AI
-     * @param userPrompt   - The actual content/question
-     * @return AI response as String
+     * Send prompt with default config (used by Agent 1)
      */
     public String chat(String systemPrompt, String userPrompt) throws IOException {
-        System.out.println(FrameworkConstants.LOG_INFO + " Sending request to Groq AI...");
+        return chat(
+            systemPrompt,
+            userPrompt,
+            config.getGroqModel(),
+            config.getGroqTemperature(),
+            config.getGroqMaxTokens()
+        );
+    }
 
-        // Build request body
+    /**
+     * Send prompt with custom model settings (used by Agent 2, 3, 4)
+     */
+    public String chat(String systemPrompt, String userPrompt,
+                       String model, double temperature, int maxTokens) throws IOException {
+
+        System.out.println(FrameworkConstants.LOG_INFO +
+                " Sending request to Groq AI [" + model + "]...");
+
         JsonObject requestBody = new JsonObject();
-        requestBody.addProperty("model", config.getGroqModel());
-        requestBody.addProperty("temperature", config.getGroqTemperature());
-        requestBody.addProperty("max_tokens", config.getGroqMaxTokens());
+        requestBody.addProperty("model", model);
+        requestBody.addProperty("temperature", temperature);
+        requestBody.addProperty("max_tokens", maxTokens);
 
         JsonArray messages = new JsonArray();
 
@@ -67,7 +78,6 @@ public class GroqClient {
 
         requestBody.add("messages", messages);
 
-        // Build HTTP request
         RequestBody body = RequestBody.create(gson.toJson(requestBody), JSON);
         Request request = new Request.Builder()
                 .url(FrameworkConstants.GROQ_API_URL)
@@ -76,7 +86,6 @@ public class GroqClient {
                 .post(body)
                 .build();
 
-        // Execute request
         try (Response response = httpClient.newCall(request).execute()) {
             if (!response.isSuccessful()) {
                 throw new IOException(
@@ -84,17 +93,16 @@ public class GroqClient {
                     response.code() + " - " + response.message()
                 );
             }
-
             String responseBody = response.body().string();
             JsonObject jsonResponse = gson.fromJson(responseBody, JsonObject.class);
-
             String result = jsonResponse
                     .getAsJsonArray("choices")
                     .get(0).getAsJsonObject()
                     .getAsJsonObject("message")
                     .get("content").getAsString();
 
-            System.out.println(FrameworkConstants.LOG_SUCCESS + " Groq AI response received!");
+            System.out.println(FrameworkConstants.LOG_SUCCESS +
+                    " Groq AI response received!");
             return result;
         }
     }

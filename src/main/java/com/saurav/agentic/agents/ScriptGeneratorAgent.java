@@ -1,5 +1,9 @@
 package com.saurav.agentic.agents;
 
+import com.saurav.agentic.config.ModelConfig;
+import com.saurav.agentic.prompts.composers.PomPromptComposer;
+import com.saurav.agentic.prompts.composers.ScriptPromptComposer;
+
 import com.saurav.agentic.constants.FrameworkConstants;
 import com.saurav.agentic.models.TestCase;
 import com.saurav.agentic.utils.ExcelUtil;
@@ -19,281 +23,291 @@ import java.util.Map;
 /**
  * ScriptGeneratorAgent - Agent 2
  *
- * Reads automation-feasible test cases from Excel
- * Groups them by component
- * Calls Groq AI per component to generate:
- *   1. A Page Object Model (POM) class  → src/test/java/pages/
- *   2. A TestNG test class              → src/test/java/generated/ui/
- *
+ * Reads automation-feasible test cases from Excel Groups them by component
+ * Calls Groq AI per component to generate: 1. A Page Object Model (POM) class →
+ * src/test/java/pages/ 2. A TestNG test class → src/test/java/generated/ui/
  */
 public class ScriptGeneratorAgent {
 
-    private final GroqClient groqClient;
+	private final GroqClient groqClient;
+	private final ModelConfig modelConfig;
 
-    // Output folders for generated files
-    private static final String PAGES_OUTPUT_DIR   = "src/test/java/pages/";
-    private static final String TESTS_OUTPUT_DIR   = "src/test/java/generated/ui/";
+	private static final String PAGES_OUTPUT_DIR = "src/test/java/pages/";
+	private static final String TESTS_OUTPUT_DIR = "src/test/java/generated/ui/";
 
-    public ScriptGeneratorAgent() {
-        this.groqClient = new GroqClient();
-    }
+	public ScriptGeneratorAgent() {
+		this.groqClient = new GroqClient();
+		this.modelConfig  = ModelConfig.getInstance();
+	}
 
-    /**
-     * Main entry point for Agent 2
-     *
-     * @param excelPath - path to ui-test-cases.xlsx (output of Agent 1)
-     * @param pageUrl   - the URL that was tested (used in prompts)
-     * @param pageAnalysis - scraped page analysis string (used for POM generation)
-     */
-    public void run(String excelPath, String pageUrl, String pageAnalysis) {
+	/**
+	 * Main entry point for Agent 2
+	 */
+	public void run(String excelPath, String pageUrl, String pageAnalysis) {
 
-        System.out.println("\n" + FrameworkConstants.LOG_INFO +
-                " ============================================");
-        System.out.println(FrameworkConstants.LOG_INFO +
-                " Agent 2: Script Generator Started");
-        System.out.println(FrameworkConstants.LOG_INFO +
-                " ============================================");
+		System.out.println("\n" + FrameworkConstants.LOG_INFO + " ============================================");
+		System.out.println(FrameworkConstants.LOG_INFO + " Agent 2: Script Generator Started");
+		System.out.println(FrameworkConstants.LOG_INFO + " ============================================");
 
-        try {
-            // ── Step 1: Read test cases from Excel ──────────────────────────
-            System.out.println(FrameworkConstants.LOG_INFO +
-                    " Reading test cases from: " + excelPath);
+		try {
+			// ── Step 1: Read test cases from Excel ──────────────────────────
+			System.out.println(FrameworkConstants.LOG_INFO + " Reading test cases from: " + excelPath);
 
-            List<TestCase> allTestCases = ExcelUtil.readTestCases(excelPath);
+			List<TestCase> allTestCases = ExcelUtil.readTestCases(excelPath);
 
-            // ── Step 2: Filter only automation-feasible test cases ───────────
-            List<TestCase> feasibleCases = allTestCases.stream()
-                    .filter(TestCase::isAutomationFeasible)
-                    .toList();
+			// ── Step 2: Filter only automation-feasible test cases ───────────
+			List<TestCase> feasibleCases = allTestCases.stream().filter(TestCase::isAutomationFeasible).toList();
 
-            System.out.println(FrameworkConstants.LOG_INFO +
-                    " Total test cases     : " + allTestCases.size());
-            System.out.println(FrameworkConstants.LOG_INFO +
-                    " Automation feasible  : " + feasibleCases.size());
+			System.out.println(FrameworkConstants.LOG_INFO + " Total test cases     : " + allTestCases.size());
+			System.out.println(FrameworkConstants.LOG_INFO + " Automation feasible  : " + feasibleCases.size());
 
-            if (feasibleCases.isEmpty()) {
-                System.out.println(FrameworkConstants.LOG_WARNING +
-                        " No automation-feasible test cases found. Exiting Agent 2.");
-                return;
-            }
+			if (feasibleCases.isEmpty()) {
+				System.out.println(
+						FrameworkConstants.LOG_WARNING + " No automation-feasible test cases found. Exiting Agent 2.");
+				return;
+			}
 
-            // ── Step 3: Group by component ───────────────────────────────────
-            Map<String, List<TestCase>> byComponent = groupByComponent(feasibleCases);
+			// ── Step 3: Group by component ───────────────────────────────────
+			Map<String, List<TestCase>> byComponent = groupByComponent(feasibleCases);
 
-            System.out.println(FrameworkConstants.LOG_INFO +
-                    " Components found     : " + byComponent.size());
+			System.out.println(FrameworkConstants.LOG_INFO + " Components found     : " + byComponent.size());
 
-            // ── Step 4: Create output directories ───────────────────────────
-            createDirectory(PAGES_OUTPUT_DIR);
-            createDirectory(TESTS_OUTPUT_DIR);
+			// ── Step 4: Create output directories ───────────────────────────
+			createDirectory(PAGES_OUTPUT_DIR);
+			createDirectory(TESTS_OUTPUT_DIR);
 
-            // ── Step 5: For each component → generate POM + Test class ──────
-            int componentNumber = 1;
-            int totalGenerated  = 0;
+			// ── Step 5: For each component → generate POM + Test class ──────
+			int componentNumber = 1;
+			int totalGenerated = 0;
 
-            for (Map.Entry<String, List<TestCase>> entry : byComponent.entrySet()) {
-                String component  = entry.getKey();
-                List<TestCase> cases = entry.getValue();
+			for (Map.Entry<String, List<TestCase>> entry : byComponent.entrySet()) {
+				String component = entry.getKey();
+				List<TestCase> cases = entry.getValue();
 
-                System.out.println("\n" + FrameworkConstants.LOG_INFO +
-                        " Processing component " + componentNumber +
-                        "/" + byComponent.size() + ": " + component +
-                        " (" + cases.size() + " test cases)");
+				System.out.println("\n" + FrameworkConstants.LOG_INFO + " Processing component " + componentNumber + "/"
+						+ byComponent.size() + ": " + component + " (" + cases.size() + " test cases)");
 
-                String className = PromptBuilder.toPascalCase(component);
+				String className = PromptBuilder.toPascalCase(component);
 
-                // Generate POM class
-                boolean pomSuccess = generatePomClass(
-                        component, className, pageUrl, pageAnalysis
-                );
+				// Generate POM class — returns the generated code
+				String pomCode = generatePomClass(component, className, pageUrl, pageAnalysis);
 
-                // Generate Test class
-                boolean testSuccess = generateTestClass(
-                        component, className, pageUrl, cases
-                );
+				// Brief pause between POM and Test generation
+				System.out.println(FrameworkConstants.LOG_INFO + "   Waiting 10s between POM and Test generation...");
+				sleep(10000);
 
-                if (pomSuccess && testSuccess) {
-                    totalGenerated++;
-                    System.out.println(FrameworkConstants.LOG_SUCCESS +
-                            " Generated: " + className + "Page.java + " +
-                            className + "Test.java");
-                }
+				// Generate Test class — pass pomCode so AI knows exact methods
+				boolean testSuccess = false;
+				if (pomCode != null) {
+					testSuccess = generateTestClass(component, className, pageUrl, cases, pomCode);
+				} else {
+					System.out.println(
+							FrameworkConstants.LOG_WARNING + "   Skipping test generation — POM generation failed.");
+				}
 
-                componentNumber++;
-            }
+				// Count success only if both succeeded
+				if (pomCode != null && testSuccess) {
+					totalGenerated++;
+					System.out.println(FrameworkConstants.LOG_SUCCESS + " Generated: " + className + "Page.java + "
+							+ className + "Test.java");
+				}
 
-            // ── Step 6: Print summary ────────────────────────────────────────
-            printSummary(byComponent, totalGenerated);
+				// Pause between components
+				if (componentNumber < byComponent.size()) {
+					System.out.println(FrameworkConstants.LOG_INFO + "   Waiting 15s before next component...");
+					sleep(30000);
+				}
 
-        } catch (IOException e) {
-            System.out.println(FrameworkConstants.LOG_ERROR +
-                    " Agent 2 failed: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
+				componentNumber++;
+			}
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // POM CLASS GENERATION
-    // ─────────────────────────────────────────────────────────────────────────
+			// ── Step 6: Print summary ────────────────────────────────────────
+			printSummary(byComponent, totalGenerated);
 
-    /**
-     * Calls Groq AI to generate a POM class and saves it to src/test/java/pages/
-     */
-    private boolean generatePomClass(String component, String className,
-                                      String pageUrl, String pageAnalysis) {
-        try {
-            System.out.println(FrameworkConstants.LOG_INFO +
-                    "   Generating POM class: " + className + "Page.java...");
+		} catch (IOException e) {
+			System.out.println(FrameworkConstants.LOG_ERROR + " Agent 2 failed: " + e.getMessage());
+			e.printStackTrace();
+		}
+	}
 
-            String systemPrompt = PromptBuilder.pomSystemPrompt();
-            String userPrompt   = PromptBuilder.pomUserPrompt(
-                    component, className + "Page", pageUrl, pageAnalysis
-            );
+	// ─────────────────────────────────────────────────────────────────────────
+	// POM CLASS GENERATION
+	// ─────────────────────────────────────────────────────────────────────────
 
-            String javaCode = groqClient.chat(systemPrompt, userPrompt);
-            javaCode = cleanJavaCode(javaCode);
+	/**
+	 * Calls Groq AI to generate a POM class. Returns the generated Java code
+	 * string, or null if failed.
+	 */
+	private String generatePomClass(String component, String className, String pageUrl, String pageAnalysis) {
+		String systemPrompt = PomPromptComposer.systemPrompt();
+		String userPrompt   = PomPromptComposer.userPrompt(
+		        component, className + "Page", pageUrl, pageAnalysis
+		);
+		String filePath = PAGES_OUTPUT_DIR + className + "Page.java";
 
-            String filePath = PAGES_OUTPUT_DIR + className + "Page.java";
-            saveFile(filePath, javaCode);
+		try {
+			System.out.println(FrameworkConstants.LOG_INFO + "   Generating POM class: " + className + "Page.java...");
 
-            System.out.println(FrameworkConstants.LOG_SUCCESS +
-                    "   Saved: " + filePath);
-            return true;
+			String javaCode = groqClient.chat(
+				    systemPrompt, userPrompt,
+				    modelConfig.getAgent2Model(),
+				    modelConfig.getAgent2Temperature(),
+				    modelConfig.getAgent2MaxTokens()
+				);
+			javaCode = cleanJavaCode(javaCode);
+			saveFile(filePath, javaCode);
 
-        } catch (IOException e) {
-            System.out.println(FrameworkConstants.LOG_ERROR +
-                    "   Failed to generate POM for: " + component +
-                    " — " + e.getMessage());
-            return false;
-        }
-    }
+			System.out.println(FrameworkConstants.LOG_SUCCESS + "   Saved: " + filePath);
+			return javaCode;
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // TEST CLASS GENERATION
-    // ─────────────────────────────────────────────────────────────────────────
+		} catch (IOException e) {
+			System.out.println(FrameworkConstants.LOG_WARNING + "   Rate limited, waiting 30s and retrying...");
+			try {
+				Thread.sleep(60000);
+				String javaCode = groqClient.chat(
+					    systemPrompt, userPrompt,
+					    modelConfig.getAgent2Model(),
+					    modelConfig.getAgent2Temperature(),
+					    modelConfig.getAgent2MaxTokens()
+					);
+				javaCode = cleanJavaCode(javaCode);
+				saveFile(filePath, javaCode);
+				System.out.println(FrameworkConstants.LOG_SUCCESS + "   Retry successful: " + filePath);
+				return javaCode;
+			} catch (Exception retryEx) {
+				System.out.println(FrameworkConstants.LOG_ERROR + "   Retry also failed for: " + component + " — "
+						+ retryEx.getMessage());
+				return null;
+			}
+		}
+	}
 
-    /**
-     * Calls Groq AI to generate a TestNG test class and saves it to src/test/java/generated/ui/
-     */
-    private boolean generateTestClass(String component, String className,
-                                       String pageUrl, List<TestCase> cases) {
-        try {
-            System.out.println(FrameworkConstants.LOG_INFO +
-                    "   Generating test class: " + className + "Test.java...");
+	// ─────────────────────────────────────────────────────────────────────────
+	// TEST CLASS GENERATION
+	// ─────────────────────────────────────────────────────────────────────────
 
-            String testCasesText = formatTestCasesForPrompt(cases);
+	/**
+	 * Calls Groq AI to generate a TestNG test class. Receives pomCode so AI only
+	 * calls methods that actually exist.
+	 */
+	private boolean generateTestClass(String component, String className, String pageUrl, List<TestCase> cases,
+			String pomCode) {
+		String testCasesText = formatTestCasesForPrompt(cases);
+		String systemPrompt  = ScriptPromptComposer.systemPrompt();
+		String userPrompt    = ScriptPromptComposer.userPrompt(
+		        component, className + "Test", pageUrl,
+		        testCasesText, pomCode,
+		        "Login page — successful login redirects to /secure, failed login shows error message in element id=flash"
+		);
+		String filePath = TESTS_OUTPUT_DIR + className + "Test.java";
 
-            String systemPrompt = PromptBuilder.seleniumScriptSystemPrompt();
-            String userPrompt   = PromptBuilder.seleniumScriptUserPrompt(
-                    component, className + "Test", pageUrl, testCasesText
-            );
+		try {
+			System.out.println(FrameworkConstants.LOG_INFO + "   Generating test class: " + className + "Test.java...");
 
-            String javaCode = groqClient.chat(systemPrompt, userPrompt);
-            javaCode = cleanJavaCode(javaCode);
+			String javaCode = groqClient.chat(
+				    systemPrompt, userPrompt,
+				    modelConfig.getAgent2Model(),
+				    modelConfig.getAgent2Temperature(),
+				    modelConfig.getAgent2MaxTokens()
+				);
+			javaCode = cleanJavaCode(javaCode);
+			saveFile(filePath, javaCode);
 
-            String filePath = TESTS_OUTPUT_DIR + className + "Test.java";
-            saveFile(filePath, javaCode);
+			System.out.println(FrameworkConstants.LOG_SUCCESS + "   Saved: " + filePath);
+			return true;
 
-            System.out.println(FrameworkConstants.LOG_SUCCESS +
-                    "   Saved: " + filePath);
-            return true;
+		} catch (IOException e) {
+			System.out.println(FrameworkConstants.LOG_WARNING + "   Rate limited, waiting 30s and retrying...");
+			try {
+				Thread.sleep(60000);
+				String javaCode = groqClient.chat(
+					    systemPrompt, userPrompt,
+					    modelConfig.getAgent2Model(),
+					    modelConfig.getAgent2Temperature(),
+					    modelConfig.getAgent2MaxTokens()
+					);
+				javaCode = cleanJavaCode(javaCode);
+				saveFile(filePath, javaCode);
+				System.out.println(FrameworkConstants.LOG_SUCCESS + "   Retry successful: " + filePath);
+				return true;
+			} catch (Exception retryEx) {
+				System.out.println(FrameworkConstants.LOG_ERROR + "   Retry also failed for: " + component + " — "
+						+ retryEx.getMessage());
+				return false;
+			}
+		}
+	}
 
-        } catch (IOException e) {
-            System.out.println(FrameworkConstants.LOG_ERROR +
-                    "   Failed to generate test class for: " + component +
-                    " — " + e.getMessage());
-            return false;
-        }
-    }
+	// ─────────────────────────────────────────────────────────────────────────
+	// HELPER METHODS
+	// ─────────────────────────────────────────────────────────────────────────
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // HELPER METHODS
-    // ─────────────────────────────────────────────────────────────────────────
+	private Map<String, List<TestCase>> groupByComponent(List<TestCase> testCases) {
+		Map<String, List<TestCase>> grouped = new LinkedHashMap<>();
+		for (TestCase tc : testCases) {
+			String component = tc.getComponent();
+			if (component == null || component.isBlank()) {
+				component = "General";
+			}
+			grouped.computeIfAbsent(component, k -> new ArrayList<>()).add(tc);
+		}
+		return grouped;
+	}
 
-    /**
-     * Groups test cases by their component field.
-     * Uses LinkedHashMap to preserve insertion order.
-     */
-    private Map<String, List<TestCase>> groupByComponent(List<TestCase> testCases) {
-        Map<String, List<TestCase>> grouped = new LinkedHashMap<>();
-        for (TestCase tc : testCases) {
-            String component = tc.getComponent();
-            if (component == null || component.isBlank()) {
-                component = "General";
-            }
-            grouped.computeIfAbsent(component, k -> new ArrayList<>()).add(tc);
-        }
-        return grouped;
-    }
+	private String formatTestCasesForPrompt(List<TestCase> cases) {
+		StringBuilder sb = new StringBuilder();
+		for (TestCase tc : cases) {
+			sb.append("---\n");
+			sb.append("ID       : ").append(tc.getTestCaseId()).append("\n");
+			sb.append("Name     : ").append(tc.getTestCaseName()).append("\n");
+			sb.append("Type     : ").append(tc.getTestType()).append("\n");
+			sb.append("Priority : ").append(tc.getPriority()).append("\n");
+			sb.append("Steps    : ").append(tc.getTestSteps()).append("\n");
+			sb.append("TestData : ").append(tc.getTestData()).append("\n");
+			sb.append("Expected : ").append(tc.getExpectedResult()).append("\n");
+		}
+		return sb.toString();
+	}
 
-    /**
-     * Formats test cases into a readable text block for the Groq prompt.
-     */
-    private String formatTestCasesForPrompt(List<TestCase> cases) {
-        StringBuilder sb = new StringBuilder();
-        for (TestCase tc : cases) {
-            sb.append("---\n");
-            sb.append("ID       : ").append(tc.getTestCaseId()).append("\n");
-            sb.append("Name     : ").append(tc.getTestCaseName()).append("\n");
-            sb.append("Type     : ").append(tc.getTestType()).append("\n");
-            sb.append("Priority : ").append(tc.getPriority()).append("\n");
-            sb.append("Steps    : ").append(tc.getTestSteps()).append("\n");
-            sb.append("Expected : ").append(tc.getExpectedResult()).append("\n");
-        }
-        return sb.toString();
-    }
+	private String cleanJavaCode(String rawCode) {
+		if (rawCode == null)
+			return "";
+		rawCode = rawCode.replaceAll("```java\\s*", "").replaceAll("```\\s*", "");
+		return rawCode.trim();
+	}
 
-    /**
-     * Cleans Groq response — strips markdown backticks if AI adds them despite instructions.
-     */
-    private String cleanJavaCode(String rawCode) {
-        if (rawCode == null) return "";
-        // Strip ```java ... ``` or ``` ... ``` blocks
-        rawCode = rawCode.replaceAll("```java\\s*", "").replaceAll("```\\s*", "");
-        return rawCode.trim();
-    }
+	private void saveFile(String filePath, String content) throws IOException {
+		File file = new File(filePath);
+		file.getParentFile().mkdirs();
+		try (FileWriter writer = new FileWriter(file)) {
+			writer.write(content);
+		}
+	}
 
-    /**
-     * Saves content to a file, creating parent directories if needed.
-     */
-    private void saveFile(String filePath, String content) throws IOException {
-        File file = new File(filePath);
-        file.getParentFile().mkdirs();
-        try (FileWriter writer = new FileWriter(file)) {
-            writer.write(content);
-        }
-    }
+	private void createDirectory(String path) {
+		try {
+			Files.createDirectories(Paths.get(path));
+		} catch (IOException e) {
+			System.out.println(FrameworkConstants.LOG_WARNING + " Could not create directory: " + path);
+		}
+	}
 
-    /**
-     * Creates a directory if it doesn't already exist.
-     */
-    private void createDirectory(String path) {
-        try {
-            Files.createDirectories(Paths.get(path));
-        } catch (IOException e) {
-            System.out.println(FrameworkConstants.LOG_WARNING +
-                    " Could not create directory: " + path);
-        }
-    }
+	private void printSummary(Map<String, List<TestCase>> byComponent, int totalGenerated) {
+		System.out.println("\n" + FrameworkConstants.LOG_INFO + " ============================================");
+		System.out.println(FrameworkConstants.LOG_SUCCESS + " Agent 2 Complete!");
+		System.out.println(FrameworkConstants.LOG_INFO + " Components processed : " + byComponent.size());
+		System.out.println(FrameworkConstants.LOG_INFO + " File pairs generated : " + totalGenerated
+				+ " (POM + Test per component)");
+		System.out.println(FrameworkConstants.LOG_INFO + " POM classes saved to : " + PAGES_OUTPUT_DIR);
+		System.out.println(FrameworkConstants.LOG_INFO + " Test classes saved to: " + TESTS_OUTPUT_DIR);
+		System.out.println(FrameworkConstants.LOG_INFO + " ============================================\n");
+	}
 
-    /**
-     * Prints final summary after all components are processed.
-     */
-    private void printSummary(Map<String, List<TestCase>> byComponent, int totalGenerated) {
-        System.out.println("\n" + FrameworkConstants.LOG_INFO +
-                " ============================================");
-        System.out.println(FrameworkConstants.LOG_SUCCESS +
-                " Agent 2 Complete!");
-        System.out.println(FrameworkConstants.LOG_INFO +
-                " Components processed : " + byComponent.size());
-        System.out.println(FrameworkConstants.LOG_INFO +
-                " File pairs generated : " + totalGenerated +
-                " (POM + Test per component)");
-        System.out.println(FrameworkConstants.LOG_INFO +
-                " POM classes saved to : " + PAGES_OUTPUT_DIR);
-        System.out.println(FrameworkConstants.LOG_INFO +
-                " Test classes saved to: " + TESTS_OUTPUT_DIR);
-        System.out.println(FrameworkConstants.LOG_INFO +
-                " ============================================\n");
-    }
+	private void sleep(int millis) {
+		try {
+			Thread.sleep(millis);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		}
+	}
 }

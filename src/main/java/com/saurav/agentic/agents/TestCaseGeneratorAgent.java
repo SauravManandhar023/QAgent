@@ -32,6 +32,7 @@ public class TestCaseGeneratorAgent {
     private final FrameworkConfig config;
     private final SeleniumScraper scraper;
     private final GroqClient groqClient;
+    private String lastPageAnalysis = "";
 
     public TestCaseGeneratorAgent() {
         this.config = FrameworkConfig.getInstance();
@@ -51,6 +52,7 @@ public class TestCaseGeneratorAgent {
         // Step 1: Scrape the page
         System.out.println("[STEP 1] Scraping UI elements...");
         String pageAnalysis = scraper.scrape(url);
+        this.lastPageAnalysis = pageAnalysis;
         System.out.println(FrameworkConstants.LOG_SUCCESS + " Scraping complete!");
 
         // Step 2: Send to Groq AI
@@ -101,6 +103,7 @@ public class TestCaseGeneratorAgent {
                 tc.setDescription(getString(obj, "description", ""));
                 tc.setPreconditions(getString(obj, "preconditions", ""));
                 tc.setTestSteps(getString(obj, "testSteps", ""));
+                tc.setTestData(getString(obj, "testData", ""));   // ← ADD after setTestSteps
                 tc.setExpectedResult(getString(obj, "expectedResult", ""));
                 tc.setTestType(getString(obj, "testType", FrameworkConstants.TEST_TYPE_POSITIVE));
                 tc.setPriority(getString(obj, "priority", FrameworkConstants.PRIORITY_MEDIUM));
@@ -186,5 +189,9 @@ public class TestCaseGeneratorAgent {
                 .filter(TestCase::isAutomationFeasible).count();
         System.out.println("\nAutomation Feasible : " + automatable + "/" + testCases.size());
         System.out.println(FrameworkConstants.LOG_SEPARATOR);
+    }
+    
+    public String getLastPageAnalysis() {
+        return lastPageAnalysis;
     }
 }

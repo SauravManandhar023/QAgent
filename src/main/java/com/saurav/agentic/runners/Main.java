@@ -1,5 +1,6 @@
 package com.saurav.agentic.runners;
 
+import com.saurav.agentic.agents.ScriptGeneratorAgent;
 import com.saurav.agentic.agents.TestCaseGeneratorAgent;
 import com.saurav.agentic.config.FrameworkConfig;
 import com.saurav.agentic.constants.FrameworkConstants;
@@ -11,19 +12,42 @@ public class Main {
 
     public static void main(String[] args) throws Exception {
 
-        // Load config
         FrameworkConfig config = FrameworkConfig.getInstance();
         config.printConfig();
 
-        // Get URL
         String url = config.getBaseUrl();
 
-        // Run Agent 1
+        // ── Agent 1 ──────────────────────────────────────────────
+        System.out.println("\n" + FrameworkConstants.LOG_SEPARATOR);
+        System.out.println(FrameworkConstants.LOG_INFO + " Starting Agent 1...");
+        System.out.println(FrameworkConstants.LOG_SEPARATOR);
+
         TestCaseGeneratorAgent agent1 = new TestCaseGeneratorAgent();
         List<TestCase> testCases = agent1.run(url);
 
-        System.out.println("\n" + FrameworkConstants.LOG_SUCCESS +
-                " Agent 1 complete! Total: " + testCases.size() + " test cases generated.");
-        System.out.println("Check Excel at: " + config.getUiExcelOutputPath());
+        System.out.println(FrameworkConstants.LOG_SUCCESS +
+                " Agent 1 complete! " + testCases.size() + " test cases generated.");
+        System.out.println(FrameworkConstants.LOG_INFO +
+                " Excel: " + config.getUiExcelOutputPath());
+
+        // ── Agent 2 ──────────────────────────────────────────────
+        System.out.println("\n" + FrameworkConstants.LOG_SEPARATOR);
+        System.out.println(FrameworkConstants.LOG_INFO + " Starting Agent 2...");
+        System.out.println(FrameworkConstants.LOG_SEPARATOR);
+
+        String pageAnalysis = agent1.getLastPageAnalysis();
+        String excelPath    = config.getUiExcelOutputPath();
+
+        ScriptGeneratorAgent agent2 = new ScriptGeneratorAgent();
+        agent2.run(excelPath, url, pageAnalysis);
+
+        // ── Done ─────────────────────────────────────────────────
+        System.out.println("\n" + FrameworkConstants.LOG_SEPARATOR);
+        System.out.println(FrameworkConstants.LOG_SUCCESS + " QAgent pipeline complete!");
+        System.out.println(FrameworkConstants.LOG_INFO +
+                " Test classes : src/test/java/generated/ui/");
+        System.out.println(FrameworkConstants.LOG_INFO +
+                " POM classes  : src/test/java/pages/");
+        System.out.println(FrameworkConstants.LOG_SEPARATOR);
     }
 }

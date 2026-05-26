@@ -10,6 +10,7 @@ public class TestCase {
     private String testCaseName;
     private String description;
     private String preconditions;
+    private String testData;  // ← ADD with other fields
     private String testSteps;
     private String expectedResult;
     private String testType;
@@ -24,6 +25,7 @@ public class TestCase {
     public String getTestCaseName() { return testCaseName; }
     public String getDescription() { return description; }
     public String getPreconditions() { return preconditions; }
+    public String getTestData() { return testData; }  // ← ADD with getters
     public String getTestSteps() { return testSteps; }
     public String getExpectedResult() { return expectedResult; }
     public String getTestType() { return testType; }
@@ -36,6 +38,7 @@ public class TestCase {
     public void setTestCaseName(String testCaseName) { this.testCaseName = testCaseName; }
     public void setDescription(String description) { this.description = description; }
     public void setPreconditions(String preconditions) { this.preconditions = preconditions; }
+    public void setTestData(String testData) { this.testData = testData; }  // ← ADD with setters
     public void setTestSteps(String testSteps) { this.testSteps = testSteps; }
     public void setExpectedResult(String expectedResult) { this.expectedResult = expectedResult; }
     public void setTestType(String testType) { this.testType = testType; }
