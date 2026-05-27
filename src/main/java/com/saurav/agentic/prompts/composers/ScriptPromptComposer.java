@@ -2,7 +2,6 @@ package com.saurav.agentic.prompts.composers;
 
 import com.saurav.agentic.prompts.modules.AssertionRules;
 import com.saurav.agentic.prompts.modules.CoreRules;
-import com.saurav.agentic.prompts.modules.LocatorRules;
 import com.saurav.agentic.prompts.modules.ProjectConfig;
 import com.saurav.agentic.prompts.modules.RecoveryRules;
 import com.saurav.agentic.prompts.modules.SeleniumRules;
@@ -23,9 +22,9 @@ public class ScriptPromptComposer {
                 Start your response directly with: package generated.ui;
                 
                 """
-                + ProjectConfig.get() + "\n"
+                + ProjectConfig.getBase() + "\n"
+                + ProjectConfig.getTestImports() + "\n"
                 + SeleniumRules.get() + "\n"
-                + LocatorRules.get() + "\n"
                 + AssertionRules.get() + "\n"
                 + CoreRules.get() + "\n"
                 + RecoveryRules.get();

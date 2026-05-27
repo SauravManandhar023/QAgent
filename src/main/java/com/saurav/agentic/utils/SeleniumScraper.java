@@ -1,8 +1,5 @@
 package com.saurav.agentic.utils;
 
-import com.saurav.agentic.config.FrameworkConfig;
-import com.saurav.agentic.constants.FrameworkConstants;
-import io.github.bonigarcia.wdm.WebDriverManager;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -11,7 +8,10 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 
-import java.util.concurrent.TimeUnit;
+import com.saurav.agentic.config.FrameworkConfig;
+import com.saurav.agentic.constants.FrameworkConstants;
+
+import io.github.bonigarcia.wdm.WebDriverManager;
 
 /**
  * SeleniumScraper - Scrapes full UI element details from a web page

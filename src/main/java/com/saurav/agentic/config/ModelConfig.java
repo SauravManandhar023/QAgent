@@ -122,6 +122,14 @@ public class ModelConfig {
         String val = configReader.get("agent4.max.tokens", "");
         return val.isEmpty() ? DEFAULT_AGENT4_MAX_TOKENS : Integer.parseInt(val);
     }
+    
+    public String getAgent2PomModel() {
+        return configReader.get("agent2.pom.model", "llama-3.1-8b-instant");
+    }
+
+    public String getAgent2TestModel() {
+        return configReader.get("agent2.test.model", "llama-3.3-70b-versatile");
+    }
 
     // ── Debug ─────────────────────────────────────────────────────────────────
 

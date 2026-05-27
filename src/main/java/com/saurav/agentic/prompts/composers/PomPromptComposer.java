@@ -1,6 +1,5 @@
 package com.saurav.agentic.prompts.composers;
 
-import com.saurav.agentic.prompts.modules.CoreRules;
 import com.saurav.agentic.prompts.modules.LocatorRules;
 import com.saurav.agentic.prompts.modules.ProjectConfig;
 import com.saurav.agentic.prompts.modules.RecoveryRules;
@@ -22,7 +21,8 @@ public class PomPromptComposer {
                 Start your response directly with: package pages;
                 
                 """
-                + ProjectConfig.get() + "\n"
+                + ProjectConfig.getBase() + "\n"
+                + ProjectConfig.getPomImports() + "\n"
                 + SeleniumRules.get() + "\n"
                 + LocatorRules.get() + "\n"
                 + RecoveryRules.get() + "\n"
