@@ -148,6 +148,19 @@ public class TestCaseGeneratorAgent {
         int end = cleaned.lastIndexOf(']');
         if (start != -1 && end != -1) {
             cleaned = cleaned.substring(start, end + 1);
+        }else if (start != -1) {
+            // ── TRUNCATION RECOVERY ──────────────────────────────────────
+            // Response was cut off — find last complete object and close the array
+            cleaned = cleaned.substring(start);
+            int lastCompleteObject = cleaned.lastIndexOf("},");
+            if (lastCompleteObject == -1) {
+                lastCompleteObject = cleaned.lastIndexOf("}");
+            }
+            if (lastCompleteObject != -1) {
+                cleaned = cleaned.substring(0, lastCompleteObject + 1) + "]";
+                System.out.println("[WARNING] JSON was truncated — recovered " +
+                        "partial response, some test cases may be missing");
+            }
         }
 
         return cleaned.trim();

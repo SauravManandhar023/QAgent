@@ -15,29 +15,24 @@ public class PomPromptComposer {
 
     public static String systemPrompt() {
         return """
-                You are a senior Selenium automation engineer.
-                Generate a Page Object Model (POM) class for the given web component.
-                Respond with PURE Java code only — no explanation, no markdown, no backticks.
-                Start your response directly with: package pages;
-                
-                """
-                + ProjectConfig.getBase() + "\n"
-                + ProjectConfig.getPomImports() + "\n"
-                + SeleniumRules.get() + "\n"
-                + LocatorRules.get() + "\n"
-                + RecoveryRules.get() + "\n"
-                + """
-                POM SPECIFIC RULES:
-                1. Use @FindBy for all locators — never findElement() inside POM
-                2. Constructor accepts ONLY WebDriver — no other parameters
-                3. Call PageFactory.initElements(driver, this) in constructor
-                4. For every @FindBy field — create a public getter returning WebElement
-                5. For input fields — create enterX(String value) that clears then sendKeys
-                6. For buttons — create clickX() method
-                7. For message elements — create getText() returning String
-                   and isDisplayed() returning boolean
-                8. Add JavaDoc for class and every public method
-                """;
+        		POM RULES:
+        		1. Use @FindBy for all locators — priority: id > name > css > linkText > xpath
+        		2. Constructor accepts WebDriver only — call PageFactory.initElements(driver, this)
+        		3. For every @FindBy field create a public getter returning WebElement
+        		4. For inputs: enterX(String value) — clear then sendKeys
+        		5. For buttons: clickX() method
+        		6. For messages: getText() and isDisplayed() methods
+        		7. NEVER use empty linkText: @FindBy(linkText = "")
+        		   Use CSS href instead: @FindBy(css = "[href='url']")
+        		8. Include WebDriverWait as field, initialize in constructor
+        		9. ALWAYS include a flash/error message element if the page has form submission:
+        		   @FindBy(id = "flash")
+        		   private WebElement flashMessage;
+        		   
+        		   public WebElement getFlashMessage() { return flashMessage; }
+        		   public String getFlashMessageText() { return flashMessage.getText(); }
+        		   public boolean isFlashMessageDisplayed() { return flashMessage.isDisplayed(); }
+        		""";
     }
 
     public static String userPrompt(String component, String className,

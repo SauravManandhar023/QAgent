@@ -6,7 +6,13 @@ import com.saurav.agentic.config.FrameworkConfig;
 import com.saurav.agentic.constants.FrameworkConstants;
 import com.saurav.agentic.models.TestCase;
 
+import com.saurav.agentic.agents.Agent3_Compiler;
+import com.saurav.agentic.models.CompileResult;
+
+import com.saurav.agentic.agents.Agent4_Reviewer;
+
 import java.util.List;
+
 
 public class Main {
 
@@ -49,5 +55,32 @@ public class Main {
         System.out.println(FrameworkConstants.LOG_INFO +
                 " POM classes  : src/test/java/pages/");
         System.out.println(FrameworkConstants.LOG_SEPARATOR);
+        
+    	// ── Agent 3 — Compile Verification ───────────────────────────────
+        System.out.println("\n" + FrameworkConstants.LOG_SEPARATOR);
+        System.out.println(FrameworkConstants.LOG_INFO + " Starting Agent 3...");
+        System.out.println(FrameworkConstants.LOG_SEPARATOR);
+
+        Agent3_Compiler agent3 = new Agent3_Compiler();
+        List<CompileResult> compileResults = agent3.run();
+
+        long failedCount = compileResults.stream()
+                .filter(r -> !r.isSuccess()).count();
+
+        System.out.println(FrameworkConstants.LOG_SUCCESS +
+                " Agent 3 complete! Failed: " + failedCount + "/" +
+                compileResults.size() + " files");
+        
+     // ── Agent 4 — Fix & Review ────────────────────────────────────────
+        System.out.println("\n" + FrameworkConstants.LOG_SEPARATOR);
+        System.out.println(FrameworkConstants.LOG_INFO + " Starting Agent 4...");
+        System.out.println(FrameworkConstants.LOG_SEPARATOR);
+
+        Agent4_Reviewer agent4 = new Agent4_Reviewer();
+        int fixedCount = agent4.run(compileResults);
+
+        System.out.println(FrameworkConstants.LOG_SUCCESS +
+                " Agent 4 complete! Fixed: " + fixedCount +
+                " files");
     }
 }

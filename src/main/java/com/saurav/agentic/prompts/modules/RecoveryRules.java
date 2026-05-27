@@ -70,6 +70,11 @@ public class RecoveryRules {
 				    2. driver.get("URL");
 				    3. pageObject = new PageClass(driver);
 				    4. wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+				14. For link elements that may be off-screen or have zero size:
+			    NEVER use element.click() directly
+			    ALWAYS use JS click via BasePage or inline:
+			    js.executeScript("arguments[0].scrollIntoView({block:'center'});", element);
+			    js.executeScript("arguments[0].click();", element);
         		""";
     }
 }
