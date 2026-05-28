@@ -70,11 +70,29 @@ public class RecoveryRules {
 				    2. driver.get("URL");
 				    3. pageObject = new PageClass(driver);
 				    4. wait = new WebDriverWait(driver, Duration.ofSeconds(10));
-				14. For link elements that may be off-screen or have zero size:
-			    NEVER use element.click() directly
-			    ALWAYS use JS click via BasePage or inline:
+				    
+				14. For link elements or any element that may be off-screen or have zero size:
+			    NEVER use element.click() directly for links at bottom of page
+			    ALWAYS scroll into view first then use JS click:
 			    js.executeScript("arguments[0].scrollIntoView({block:'center'});", element);
 			    js.executeScript("arguments[0].click();", element);
-        		""";
+			    For this, add JavascriptExecutor to the POM class:
+			    private JavascriptExecutor js;
+			    Initialize in constructor: this.js = (JavascriptExecutor) driver;
+			    Import: import org.openqa.selenium.JavascriptExecutor;
+			    
+			    15. For links with target="_blank" — they open in a new tab:
+			    NEVER wait for URL change on the original window
+			    ALWAYS switch to the new tab first:
+			    wait.until(ExpectedConditions.numberOfWindowsToBe(2));
+			    for (String handle : driver.getWindowHandles()) {
+			        if (!handle.equals(originalWindow)) {
+			            driver.switchTo().window(handle);
+			            break;
+			        }
+			    }
+			    Then assert on the new tab URL.
+			    
+			    """;
     }
 }

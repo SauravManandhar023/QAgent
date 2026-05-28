@@ -48,6 +48,7 @@ public class ProjectConfig {
                 import org.openqa.selenium.support.ui.WebDriverWait;
                 import org.openqa.selenium.support.ui.ExpectedConditions;
                 import java.time.Duration;
+                import org.openqa.selenium.JavascriptExecutor;
                 IMPORT RULE: only include imports actually used in your code.
                 """;
     }
