@@ -269,8 +269,7 @@ public class Agent4_Reviewer {
      */
     private boolean hasAntiPatterns(String code) {
         return code.contains("@FindBy(linkText = \"\")") ||
-               code.contains("new WebDriverWait(driver, 10)") ||
-               code.contains("new WebDriverWait(driver, 20)") ||
+               code.matches("(?s).*new WebDriverWait\\(driver,\\s*\\d+\\).*") ||
                code.contains("driver.findElementByCssSelector") ||
                code.contains("SeverityLevel.MEDIUM") ||
                code.contains("SeverityLevel.HIGH") ||
