@@ -248,10 +248,9 @@ public class ScriptGeneratorAgent {
                                        String trimmedPom) {
         String testCasesText = formatTestCasesForPrompt(cases);
         String systemPrompt  = ScriptPromptComposer.systemPrompt();
-        String userPrompt    = ScriptPromptComposer.userPrompt(
+        String userPrompt = ScriptPromptComposer.userPrompt(
                 component, className, pageUrl, testCasesText, trimmedPom,
-                "Login page — successful login redirects to /secure, " +
-                "failed login shows error message in element id=flash"
+                buildPageMetadata(pageUrl)  // ← dynamic
         );
         String filePath = TESTS_OUTPUT_DIR + className + ".java";
 
@@ -408,6 +407,26 @@ public class ScriptGeneratorAgent {
             Thread.sleep(millis);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        }
+    }
+    
+    private String buildPageMetadata(String pageUrl) {
+        if (pageUrl.contains("login") || pageUrl.contains("auth")) {
+            return "Login page — successful login redirects to /secure, " +
+                   "failed login shows error message in element id=flash. " +
+                   "Never use page title to assert outcomes.";
+        } else if (pageUrl.contains("checkbox")) {
+            return "Checkboxes page — contains input elements of type checkbox. " +
+                   "Checkbox 1 starts UNCHECKED, Checkbox 2 starts CHECKED. " +
+                   "Use isSelected() to verify checkbox state, not isDisplayed(). " +
+                   "Clicking a checked checkbox unchecks it and vice versa.";
+        } else if (pageUrl.contains("dropdown")) {
+            return "Dropdown page — contains a select element. " +
+                   "Use Select class to interact with dropdown options. " +
+                   "Assert selected option using getFirstSelectedOption().getText().";
+        } else {
+            return "Analyze the page elements and write appropriate assertions " +
+                   "based on the component behavior described in the test cases.";
         }
     }
 }

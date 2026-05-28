@@ -8,6 +8,7 @@ import com.saurav.agentic.utils.GroqClient;
 
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -47,41 +48,50 @@ public class Agent4_Reviewer {
         System.out.println(FrameworkConstants.LOG_INFO +
                 " ============================================");
 
-        // Filter only failed files
-        List<CompileResult> failedFiles = compileResults.stream()
+        // ── Step 1: Pre-compile review — fix known anti-patterns ────────────
+        System.out.println(FrameworkConstants.LOG_INFO +
+                " Step 1: Pre-compile anti-pattern review...");
+        compileResults = preCompileReview(compileResults);
+
+        // ── Step 2: Re-compile after pre-compile fixes ───────────────────────
+        System.out.println(FrameworkConstants.LOG_INFO +
+                " Step 2: Re-compiling after pre-compile fixes...");
+        List<CompileResult> recompiled = new ArrayList<>();
+        for (CompileResult result : compileResults) {
+            CompileResult fresh = JavaCompilerUtil.compile(result.getFilePath());
+            recompiled.add(fresh);
+        }
+
+        // ── Step 3: Fix remaining compile errors ─────────────────────────────
+        List<CompileResult> failedFiles = recompiled.stream()
                 .filter(r -> !r.isSuccess())
                 .toList();
 
         if (failedFiles.isEmpty()) {
             System.out.println(FrameworkConstants.LOG_SUCCESS +
-                    " No failed files — nothing to fix!");
-            System.out.println(FrameworkConstants.LOG_INFO +
-                    " ============================================\n");
+                    " No compile errors after pre-compile review!");
+            printSummary(0, 0);
             return 0;
         }
 
         System.out.println(FrameworkConstants.LOG_INFO +
+                " Step 3: Fixing remaining compile errors...");
+        System.out.println(FrameworkConstants.LOG_INFO +
                 " Files to fix : " + failedFiles.size());
 
         int fixedCount = 0;
-
         for (CompileResult failed : failedFiles) {
             System.out.println("\n" + FrameworkConstants.LOG_INFO +
                     " Fixing: " + failed.getClassName());
-
             boolean fixed = attemptFix(failed);
-
             if (fixed) {
                 fixedCount++;
                 System.out.println(FrameworkConstants.LOG_SUCCESS +
                         " Fixed: " + failed.getClassName());
             } else {
                 System.out.println(FrameworkConstants.LOG_WARNING +
-                        " Could not fix: " + failed.getClassName() +
-                        " — left with TODO comments");
+                        " Could not fix: " + failed.getClassName());
             }
-
-            // Pause between fixes to avoid rate limits
             sleep(15000);
         }
 
@@ -212,6 +222,123 @@ public class Agent4_Reviewer {
                 - Return the complete fixed file
                 - Start with the package declaration
                 """.formatted(errors, sourceCode);
+    }
+    
+    /**
+     * Pre-compile code review — catches known anti-patterns
+     * before even attempting compilation
+     */
+    public List<CompileResult> preCompileReview(List<CompileResult> allResults) {
+
+        System.out.println("\n" + FrameworkConstants.LOG_INFO +
+                " Agent 4: Pre-compile review started...");
+
+        List<CompileResult> reviewed = new ArrayList<>();
+
+        for (CompileResult result : allResults) {
+            if (result.getSourceCode() == null || result.getSourceCode().isBlank()) {
+                reviewed.add(result);
+                continue;
+            }
+
+            // Check for known anti-patterns
+            if (hasAntiPatterns(result.getSourceCode())) {
+                System.out.println(FrameworkConstants.LOG_INFO +
+                        "   Anti-patterns found in: " + result.getClassName() +
+                        " — fixing before compile...");
+                try {
+                    String fixedCode = askGroqToReview(result.getSourceCode(),
+                            result.getFilePath());
+                    fixedCode = cleanJavaCode(fixedCode);
+                    saveFile(result.getFilePath(), fixedCode);
+                    result.setSourceCode(fixedCode);
+                    System.out.println(FrameworkConstants.LOG_SUCCESS +
+                            "   Pre-compile fix applied: " + result.getClassName());
+                } catch (Exception e) {
+                    System.out.println(FrameworkConstants.LOG_WARNING +
+                            "   Pre-compile fix failed: " + e.getMessage());
+                }
+                sleep(10000);
+            }
+            reviewed.add(result);
+        }
+        return reviewed;
+    }
+
+    /**
+     * Checks source code for known anti-patterns
+     */
+    private boolean hasAntiPatterns(String code) {
+        return code.contains("@FindBy(linkText = \"\")") ||
+               code.contains("new WebDriverWait(driver, 10)") ||
+               code.contains("new WebDriverWait(driver, 20)") ||
+               code.contains("driver.findElementByCssSelector") ||
+               code.contains("SeverityLevel.MEDIUM") ||
+               code.contains("SeverityLevel.HIGH") ||
+               code.contains("SeverityLevel.LOW") ||
+               (code.contains(".click()") && code.contains("Link"));
+    }
+
+    /**
+     * Sends code to Groq AI for quality review and anti-pattern fixing
+     */
+    private String askGroqToReview(String sourceCode, String filePath) throws IOException {
+        
+
+        String systemPrompt = """
+                You are a senior Selenium QA engineer reviewing generated code for quality issues.
+                Fix ALL of the following anti-patterns if found:
+
+                1. Empty linkText locator: @FindBy(linkText = "")
+                   Fix: @FindBy(css = "[href='url']") — use actual href value from context
+
+                2. Raw int in WebDriverWait: new WebDriverWait(driver, 10)
+                   Fix: new WebDriverWait(driver, Duration.ofSeconds(10))
+
+                3. Wrong SeverityLevel: SeverityLevel.MEDIUM, SeverityLevel.HIGH, SeverityLevel.LOW
+                   Fix: MEDIUM→NORMAL, HIGH→CRITICAL, LOW→MINOR
+
+                4. Deprecated Selenium method: driver.findElementByCssSelector()
+                   Fix: driver.findElement(By.cssSelector())
+
+                5. Direct click on link elements that may be off-screen:
+                   element.click() where element is a link
+                   Fix: use JS click:
+                   ((JavascriptExecutor)driver).executeScript("arguments[0].scrollIntoView({block:'center'});", element);
+                   ((JavascriptExecutor)driver).executeScript("arguments[0].click();", element);
+
+                6. target="_blank" links — waiting for URL on same window:
+                   wait.until(ExpectedConditions.urlContains("x")) after clicking a _blank link
+                   Fix: switch to new window first:
+                   String original = driver.getWindowHandle();
+                   wait.until(ExpectedConditions.numberOfWindowsToBe(2));
+                   for (String h : driver.getWindowHandles()) {
+                       if (!h.equals(original)) { driver.switchTo().window(h); break; }
+                   }
+
+                7. Page title assertion for dynamic outcomes:
+                   Assert.assertTrue(driver.getTitle().contains("x"))
+                   Fix: use URL or element-based assertion instead
+
+                RULES:
+                - Fix ONLY the anti-patterns listed above
+                - Do not rewrite the entire file
+                - Return complete fixed Java code only
+                - No markdown, no backticks, no explanation
+                """;
+
+        String userPrompt = """
+                Review and fix this Java file for anti-patterns:
+
+                %s
+                """.formatted(sourceCode);
+
+        return groqClient.chat(
+                systemPrompt, userPrompt,
+                modelConfig.getAgent4Model(),
+                modelConfig.getAgent4Temperature(),
+                modelConfig.getAgent4MaxTokens()
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────

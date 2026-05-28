@@ -32,6 +32,16 @@ public class PomPromptComposer {
         		   public WebElement getFlashMessage() { return flashMessage; }
         		   public String getFlashMessageText() { return flashMessage.getText(); }
         		   public boolean isFlashMessageDisplayed() { return flashMessage.isDisplayed(); }
+        		10. For collections of similar elements use List<WebElement> with @FindAll:
+				    CORRECT:
+				    import org.openqa.selenium.support.FindAll;
+				    import java.util.List;
+				    
+				    @FindAll(@FindBy(css = "input[type='checkbox']"))
+				    private List<WebElement> checkboxes;
+				    
+				    NEVER use WebElement[] arrays — PageFactory does not support arrays
+				    NEVER use @FindBy for List<WebElement> — use @FindAll instead
         		""";
     }
 

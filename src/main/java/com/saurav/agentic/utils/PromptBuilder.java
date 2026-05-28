@@ -38,6 +38,8 @@ public class PromptBuilder {
                    For edge cases: use boundary values (e.g. "username: '', password: ''")
                    NEVER leave testData empty
                 9. testSteps must be detailed and executable by an automation engineer
+                10. Do NOT generate test cases for behavior that is impossible without state persistence
+        		e.g. "checkbox state retained after page reload" — browsers reset form elements on reload
 
                 JSON structure for each test case:
                 {
