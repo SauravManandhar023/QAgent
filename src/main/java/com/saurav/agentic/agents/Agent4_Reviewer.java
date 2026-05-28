@@ -247,8 +247,7 @@ public class Agent4_Reviewer {
                         "   Anti-patterns found in: " + result.getClassName() +
                         " — fixing before compile...");
                 try {
-                    String fixedCode = askGroqToReview(result.getSourceCode(),
-                            result.getFilePath());
+                	String fixedCode = askGroqToReview(result.getSourceCode());
                     fixedCode = cleanJavaCode(fixedCode);
                     saveFile(result.getFilePath(), fixedCode);
                     result.setSourceCode(fixedCode);
@@ -282,7 +281,7 @@ public class Agent4_Reviewer {
     /**
      * Sends code to Groq AI for quality review and anti-pattern fixing
      */
-    private String askGroqToReview(String sourceCode, String filePath) throws IOException {
+    private String askGroqToReview(String sourceCode) throws IOException {
         
 
         String systemPrompt = """
