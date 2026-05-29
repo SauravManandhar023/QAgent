@@ -55,6 +55,11 @@ public class PromptBuilder {
                     "component": "Login Form",
                     "automationFeasible": true
                 }
+                11. For dropdown test cases — testData must use EXACT option text from the page analysis
+        		CORRECT: "Option 1", "Option 2", "Please select an option"
+        		WRONG: "1", "2", "option1", any XSS or SQL injection string
+        		Dropdown security tests should assert rejection of invalid input at application level,
+        		NOT attempt to select injection strings as dropdown options
                 """;
     }
 

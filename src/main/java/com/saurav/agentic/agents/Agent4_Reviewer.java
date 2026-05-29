@@ -274,7 +274,11 @@ public class Agent4_Reviewer {
                code.contains("SeverityLevel.MEDIUM") ||
                code.contains("SeverityLevel.HIGH") ||
                code.contains("SeverityLevel.LOW") ||
-               (code.contains(".click()") && code.contains("Link"));
+               (code.contains(".click()") && code.contains("Link")) ||
+               code.contains("import org.openqa.selenium.Duration") ||
+               code.contains("Duration as WebDriverWaitDuration") ||
+               (code.contains("JavascriptExecutor") &&
+                !code.contains("import org.openqa.selenium.JavascriptExecutor"));
     }
 
     /**
@@ -323,6 +327,15 @@ public class Agent4_Reviewer {
                 - Do not rewrite the entire file
                 - Return complete fixed Java code only
                 - No markdown, no backticks, no explanation
+                
+                8. WRONG Duration import: import org.openqa.selenium.Duration
+				   Fix: import java.time.Duration
+				   
+				9. Invalid import alias syntax: import X as Y
+				   This is not valid Java — remove it and use: import java.time.Duration
+				   
+				10. JavascriptExecutor used but not imported:
+				    Add: import org.openqa.selenium.JavascriptExecutor
                 """;
 
         String userPrompt = """

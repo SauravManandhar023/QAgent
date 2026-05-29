@@ -35,7 +35,6 @@ public class ScriptGeneratorAgent {
 
     private static final String PAGES_OUTPUT_DIR = "src/test/java/pages/";
     private static final String TESTS_OUTPUT_DIR = "src/test/java/generated/ui/";
-
     private static final int MAX_CASES_PER_BATCH = 5;
 
     public ScriptGeneratorAgent() {
@@ -43,9 +42,6 @@ public class ScriptGeneratorAgent {
         this.modelConfig = ModelConfig.getInstance();
     }
 
-    /**
-     * Main entry point for Agent 2
-     */
     public void run(String excelPath, String pageUrl, String pageAnalysis) {
 
         System.out.println("\n" + FrameworkConstants.LOG_INFO +
@@ -56,13 +52,11 @@ public class ScriptGeneratorAgent {
                 " ============================================");
 
         try {
-            // ── Step 1: Read test cases from Excel ──────────────────────────
             System.out.println(FrameworkConstants.LOG_INFO +
                     " Reading test cases from: " + excelPath);
 
             List<TestCase> allTestCases = ExcelUtil.readTestCases(excelPath);
 
-            // ── Step 2: Filter only automation-feasible test cases ───────────
             List<TestCase> feasibleCases = allTestCases.stream()
                     .filter(TestCase::isAutomationFeasible)
                     .toList();
@@ -78,17 +72,14 @@ public class ScriptGeneratorAgent {
                 return;
             }
 
-            // ── Step 3: Group by component ───────────────────────────────────
             Map<String, List<TestCase>> byComponent = groupByComponent(feasibleCases);
 
             System.out.println(FrameworkConstants.LOG_INFO +
                     " Components found     : " + byComponent.size());
 
-            // ── Step 4: Create output directories ───────────────────────────
             createDirectory(PAGES_OUTPUT_DIR);
             createDirectory(TESTS_OUTPUT_DIR);
 
-            // ── Step 5: For each component → generate POM + Test class ──────
             int componentNumber = 1;
             int totalGenerated  = 0;
 
@@ -108,7 +99,6 @@ public class ScriptGeneratorAgent {
                         component, className, pageUrl, pageAnalysis
                 );
 
-                // Brief pause between POM and Test generation
                 System.out.println(FrameworkConstants.LOG_INFO +
                         "   Waiting 20s between POM and Test generation...");
                 sleep(20000);
@@ -119,11 +109,10 @@ public class ScriptGeneratorAgent {
                 if (pomCode != null) {
                     String trimmedPom = extractPublicMethods(pomCode);
                     List<List<TestCase>> batches = splitIntoBatches(cases, MAX_CASES_PER_BATCH);
-                    int batchNumber   = 1;
-                    int batchesOk     = 0;
+                    int batchNumber = 1;
+                    int batchesOk   = 0;
 
                     for (List<TestCase> batch : batches) {
-                        // For multiple batches append Part1, Part2 to class name
                         String batchClassName = batches.size() > 1
                                 ? className + "Part" + batchNumber
                                 : className;
@@ -135,12 +124,11 @@ public class ScriptGeneratorAgent {
 
                         boolean batchSuccess = generateTestClass(
                                 component, batchClassName + "Test",
-                                pageUrl, batch, trimmedPom
+                                pageUrl, batch, trimmedPom, pageAnalysis
                         );
 
                         if (batchSuccess) batchesOk++;
 
-                        // Pause between batches
                         if (batchNumber < batches.size()) {
                             System.out.println(FrameworkConstants.LOG_INFO +
                                     "   Waiting 20s between batches...");
@@ -157,7 +145,6 @@ public class ScriptGeneratorAgent {
                             "   Skipping test generation — POM generation failed.");
                 }
 
-                // Count success only if POM + all batches succeeded
                 if (pomCode != null && allBatchesSucceeded) {
                     totalGenerated++;
                     System.out.println(FrameworkConstants.LOG_SUCCESS +
@@ -165,7 +152,6 @@ public class ScriptGeneratorAgent {
                             className + "Test.java");
                 }
 
-                // Pause between components
                 if (componentNumber < byComponent.size()) {
                     System.out.println(FrameworkConstants.LOG_INFO +
                             "   Waiting 30s before next component...");
@@ -175,7 +161,6 @@ public class ScriptGeneratorAgent {
                 componentNumber++;
             }
 
-            // ── Step 6: Print summary ────────────────────────────────────────
             printSummary(byComponent, totalGenerated);
 
         } catch (IOException e) {
@@ -202,30 +187,39 @@ public class ScriptGeneratorAgent {
                     "   Generating POM class: " + className + "Page.java...");
 
             String javaCode = groqClient.chat(
-            	    systemPrompt, userPrompt,
-            	    modelConfig.getAgent2PomModel(),        // ← 8b for POM
-            	    modelConfig.getAgent2Temperature(),
-            	    modelConfig.getAgent2MaxTokens()
-            	);
+                    systemPrompt, userPrompt,
+                    modelConfig.getAgent2PomModel(),
+                    modelConfig.getAgent2Temperature(),
+                    modelConfig.getAgent2MaxTokens()
+            );
             javaCode = cleanJavaCode(javaCode);
-            saveFile(filePath, javaCode);
 
+            if (!isValidJavaFile(javaCode, false)) {
+                throw new IOException("Generated POM appears truncated or empty");
+            }
+
+            saveFile(filePath, javaCode);
             System.out.println(FrameworkConstants.LOG_SUCCESS +
                     "   Saved: " + filePath);
             return javaCode;
 
         } catch (IOException e) {
             System.out.println(FrameworkConstants.LOG_WARNING +
-                    "   Rate limited, waiting 60s and retrying...");
+                    "   Failed or truncated, waiting 60s and retrying...");
             try {
                 Thread.sleep(60000);
                 String javaCode = groqClient.chat(
-                	    systemPrompt, userPrompt,
-                	    modelConfig.getAgent2PomModel(),        // ← 8b for POM
-                	    modelConfig.getAgent2Temperature(),
-                	    modelConfig.getAgent2MaxTokens()
-                	);
+                        systemPrompt, userPrompt,
+                        modelConfig.getAgent2PomModel(),
+                        modelConfig.getAgent2Temperature(),
+                        modelConfig.getAgent2MaxTokens()
+                );
                 javaCode = cleanJavaCode(javaCode);
+
+                if (!isValidJavaFile(javaCode, false)) {
+                    throw new IOException("Retry also returned truncated POM");
+                }
+
                 saveFile(filePath, javaCode);
                 System.out.println(FrameworkConstants.LOG_SUCCESS +
                         "   Retry successful: " + filePath);
@@ -245,12 +239,11 @@ public class ScriptGeneratorAgent {
 
     private boolean generateTestClass(String component, String className,
                                        String pageUrl, List<TestCase> cases,
-                                       String trimmedPom) {
+                                       String trimmedPom, String pageAnalysis) {
         String testCasesText = formatTestCasesForPrompt(cases);
         String systemPrompt  = ScriptPromptComposer.systemPrompt();
-        String userPrompt = ScriptPromptComposer.userPrompt(
-                component, className, pageUrl, testCasesText, trimmedPom,
-                buildPageMetadata(pageUrl)  // ← dynamic
+        String userPrompt    = ScriptPromptComposer.userPrompt(
+                component, className, pageUrl, testCasesText, trimmedPom, pageAnalysis
         );
         String filePath = TESTS_OUTPUT_DIR + className + ".java";
 
@@ -259,30 +252,39 @@ public class ScriptGeneratorAgent {
                     "   Generating test class: " + className + ".java...");
 
             String javaCode = groqClient.chat(
-            	    systemPrompt, userPrompt,
-            	    modelConfig.getAgent2TestModel(),       // ← 70b for test classes
-            	    modelConfig.getAgent2Temperature(),
-            	    modelConfig.getAgent2MaxTokens()
-            	);
+                    systemPrompt, userPrompt,
+                    modelConfig.getAgent2TestModel(),
+                    modelConfig.getAgent2Temperature(),
+                    modelConfig.getAgent2MaxTokens()
+            );
             javaCode = cleanJavaCode(javaCode);
-            saveFile(filePath, javaCode);
 
+            if (!isValidJavaFile(javaCode, true)) {
+                throw new IOException("Generated test class appears truncated or empty");
+            }
+
+            saveFile(filePath, javaCode);
             System.out.println(FrameworkConstants.LOG_SUCCESS +
                     "   Saved: " + filePath);
             return true;
 
         } catch (IOException e) {
             System.out.println(FrameworkConstants.LOG_WARNING +
-                    "   Rate limited, waiting 60s and retrying...");
+                    "   Failed or truncated, waiting 60s and retrying...");
             try {
                 Thread.sleep(60000);
                 String javaCode = groqClient.chat(
-                	    systemPrompt, userPrompt,
-                	    modelConfig.getAgent2TestModel(),       // ← 70b for test classes
-                	    modelConfig.getAgent2Temperature(),
-                	    modelConfig.getAgent2MaxTokens()
-                	);
+                        systemPrompt, userPrompt,
+                        modelConfig.getAgent2TestModel(),
+                        modelConfig.getAgent2Temperature(),
+                        modelConfig.getAgent2MaxTokens()
+                );
                 javaCode = cleanJavaCode(javaCode);
+
+                if (!isValidJavaFile(javaCode, true)) {
+                    throw new IOException("Retry also returned truncated test class");
+                }
+
                 saveFile(filePath, javaCode);
                 System.out.println(FrameworkConstants.LOG_SUCCESS +
                         "   Retry successful: " + filePath);
@@ -301,8 +303,18 @@ public class ScriptGeneratorAgent {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Splits test cases into batches to avoid 413 payload errors
+     * Validates generated Java file is not truncated or empty
+     * isTest = true for test classes, false for POM classes
      */
+    private boolean isValidJavaFile(String code, boolean isTest) {
+        if (code == null || code.isBlank()) return false;
+        if (!code.contains("package ")) return false;
+        if (!code.contains("public class ")) return false;
+        if (isTest && !code.contains("@Test")) return false;
+        if (code.length() < 200) return false;
+        return true;
+    }
+
     private List<List<TestCase>> splitIntoBatches(List<TestCase> cases, int batchSize) {
         List<List<TestCase>> batches = new ArrayList<>();
         for (int i = 0; i < cases.size(); i += batchSize) {
@@ -313,21 +325,15 @@ public class ScriptGeneratorAgent {
         return batches;
     }
 
-    /**
-     * Extracts only public method signatures from POM code
-     * Reduces payload size for 8B model context window
-     */
     private String extractPublicMethods(String pomCode) {
         if (pomCode == null) return "";
         StringBuilder sb = new StringBuilder();
         String[] lines = pomCode.split("\n");
         for (String line : lines) {
             String trimmed = line.trim();
-            // Keep class declaration
             if (trimmed.startsWith("public class")) {
                 sb.append(line).append("\n");
             }
-            // Keep public method signatures only
             if (trimmed.startsWith("public") && trimmed.contains("(")) {
                 sb.append("    ").append(trimmed).append("\n");
             }
@@ -407,26 +413,6 @@ public class ScriptGeneratorAgent {
             Thread.sleep(millis);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-        }
-    }
-    
-    private String buildPageMetadata(String pageUrl) {
-        if (pageUrl.contains("login") || pageUrl.contains("auth")) {
-            return "Login page — successful login redirects to /secure, " +
-                   "failed login shows error message in element id=flash. " +
-                   "Never use page title to assert outcomes.";
-        } else if (pageUrl.contains("checkbox")) {
-            return "Checkboxes page — contains input elements of type checkbox. " +
-                   "Checkbox 1 starts UNCHECKED, Checkbox 2 starts CHECKED. " +
-                   "Use isSelected() to verify checkbox state, not isDisplayed(). " +
-                   "Clicking a checked checkbox unchecks it and vice versa.";
-        } else if (pageUrl.contains("dropdown")) {
-            return "Dropdown page — contains a select element. " +
-                   "Use Select class to interact with dropdown options. " +
-                   "Assert selected option using getFirstSelectedOption().getText().";
-        } else {
-            return "Analyze the page elements and write appropriate assertions " +
-                   "based on the component behavior described in the test cases.";
         }
     }
 }
