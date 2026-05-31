@@ -409,12 +409,14 @@ public class PageMetadataExtractor {
                     "Selected option does not change");
                 metadata.setPrimaryAction("Select dropdown option using Select class");
                 metadata.setPlainTextSummary(
-                    "CRITICAL: Only use EXACT option text that exists in the dropdown.\n" +
-                    "Actual dropdown options found on page: " + optionList + "\n" +
-                    "NEVER use XSS payloads, SQL injection, or made-up values as dropdown options.\n" +
-                    "NEVER use option numbers like '1' or '2' — use full text like 'Option 1', 'Option 2'.\n" +
-                    "Security tests on dropdowns should assert that injection attempts are rejected,\n" +
-                    "NOT attempt to select them as if they were valid options."
+                		"CRITICAL: Only use EXACT option text that exists in the dropdown.\n" +
+    			        "Actual dropdown options found on page: " + optionList + "\n" +
+    			        "NOTE: 'Please select an option' is DISABLED and cannot be selected.\n" +
+    			        "Only 'Option 1' and 'Option 2' are selectable options.\n" +
+    			        "NEVER use XSS payloads, SQL injection, or made-up values as dropdown options.\n" +
+    			        "NEVER use option numbers like '1' or '2' — use full text like 'Option 1', 'Option 2'.\n" +
+    			        "Security tests on dropdowns should assert that injection attempts are rejected,\n" +
+    			        "NOT attempt to select them as if they were valid options."
                 );
             }
             case "navigation" -> {

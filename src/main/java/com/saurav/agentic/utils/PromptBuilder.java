@@ -60,6 +60,17 @@ public class PromptBuilder {
         		WRONG: "1", "2", "option1", any XSS or SQL injection string
         		Dropdown security tests should assert rejection of invalid input at application level,
         		NOT attempt to select injection strings as dropdown options
+        		12. For dropdown edge cases — NEVER generate tests that try to select:
+        		- Empty string options
+        		- Special characters (!@#$%)
+        		- XSS payloads
+        		- SQL injection strings
+			    These are NOT valid dropdown options and cannot be selected via Select class.
+			    Instead, edge cases for dropdowns should test:
+			    - Selecting first option, last option
+			    - Re-selecting already selected option
+			    - Verifying option count
+			    - Verifying default selection
                 """;
     }
 
