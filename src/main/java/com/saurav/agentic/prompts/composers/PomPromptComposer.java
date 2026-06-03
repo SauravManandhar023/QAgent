@@ -42,6 +42,14 @@ public class PomPromptComposer {
 				    
 				    NEVER use WebElement[] arrays — PageFactory does not support arrays
 				    NEVER use @FindBy for List<WebElement> — use @FindAll instead
+				 11. DROPDOWN RULES:
+					- ALWAYS expose getSelectedOption() method using Select class:
+					  public String getSelectedOption() {
+					      return new Select(dropdown).getFirstSelectedOption().getText();
+					  }
+					- NEVER return dropdown.getText() for selected value — it returns all option text
+					- ALWAYS expose selectByVisibleText() using exact option text from metadata
+					- getDropdown() should return the raw WebElement for wait conditions only
         		""";
     }
 

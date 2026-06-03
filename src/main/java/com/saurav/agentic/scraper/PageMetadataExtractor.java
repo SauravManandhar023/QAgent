@@ -253,9 +253,12 @@ public class PageMetadataExtractor {
                 String val  = attr(option, "value");
                 String text = option.getText();
                 boolean sel = option.isSelected();
+                boolean dis = !attr(option, "disabled").isEmpty();
+                
                 optionText.append(text)
                           .append("(value=").append(val).append(")")
-                          .append(sel ? "[SELECTED]" : "")
+                          .append(sel ? "[CURRENTLY_SELECTED_DEFAULT]" : "")
+                          .append(dis ? "[DISABLED_CANNOT_SELECT]" : "")
                           .append(", ");
             }
             el.setText(optionText.toString());

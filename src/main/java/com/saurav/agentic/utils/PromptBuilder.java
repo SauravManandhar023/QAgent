@@ -71,6 +71,69 @@ public class PromptBuilder {
 			    - Re-selecting already selected option
 			    - Verifying option count
 			    - Verifying default selection
+			    10. Do NOT generate test cases for behavior that is impossible without state persistence
+			    Examples of impossible behavior to avoid:
+			    - "checkbox state retained after page reload" — browsers reset form elements on reload
+			    - "form data persists after browser close" — requires explicit storage
+			    - "session remains active after clearing cookies" — impossible by design
+
+				12. For dropdown test cases — testData must use EXACT option text from the page analysis
+				    CORRECT: "Option 1", "Option 2"
+				    WRONG: "1", "2", "option1", any XSS or SQL injection string
+				    Dropdown security tests should assert that injection attempts are rejected at application level,
+				    NOT attempt to select injection strings as dropdown options.
+				    NEVER generate a test case that tries to select a DISABLED option.
+				    If page analysis shows an option is DISABLED — it cannot be selected, skip it or write a
+				    negative test asserting it cannot be selected using try/catch UnsupportedOperationException.
+				
+				13. For dropdown edge cases — NEVER generate tests that try to select:
+				    - Empty string options
+				    - Special characters (!@#$%)
+				    - XSS payloads
+				    - SQL injection strings
+				    These are NOT valid dropdown options and cannot be selected via Select class.
+				    Instead, valid edge cases for dropdowns:
+				    - Selecting first enabled option, last option
+				    - Re-selecting already selected option
+				    - Verifying option count
+				    - Verifying default selection text
+				
+				14. Do NOT generate test cases for elements that do not exist on the page.
+				    If page analysis shows NO image elements — do NOT generate image test cases.
+				    If page analysis shows NO form — do NOT generate form submission test cases.
+				    Base ALL test cases strictly on what the page analysis reports as present.
+				
+				15. For accessibility test cases — only generate them if they can be fully automated.
+				    VALID automated accessibility tests:
+				    - Verify element has aria-label attribute
+				    - Verify image has alt text
+				    - Verify input has associated label
+				    - Verify button has descriptive text
+				    INVALID — do NOT generate:
+				    - "verify keyboard navigation" — requires manual testing
+				    - "verify screen reader compatibility" — cannot be automated with Selenium
+				    - "verify focus order" — not reliably automatable
+				    If an accessibility test cannot be automated, set automationFeasible to false.
+				
+				16. For link test cases — links may use either http or https.
+				    NEVER assert exact protocol in URL — use urlContains() with just the domain.
+				    CORRECT: wait.until(ExpectedConditions.urlContains("elementalselenium.com"))
+				    WRONG: wait.until(ExpectedConditions.urlToBe("http://elementalselenium.com/"))
+				    The protocol may differ from what is in the href attribute due to browser redirects.
+				
+				17. For negative test cases involving impossible actions (selecting disabled options,
+				    clicking hidden elements) — write the test to EXPECT the failure:
+				    try {
+				        page.selectDropdownOption("Please select an option");
+				        Assert.fail("Should have thrown exception for disabled option");
+				    } catch (UnsupportedOperationException e) {
+				        Assert.assertTrue(e.getMessage().contains("disabled"), "Correct exception thrown");
+				18. For dropdown test cases — the DEFAULT selected option is shown with [CURRENTLY_SELECTED_DEFAULT]
+				    in the page metadata. Base your assertions on this EXACT value.
+				    A test asserting the default value must use the [CURRENTLY_SELECTED_DEFAULT] option text,
+				    not guess "Option 1" or any other value.
+				    If the default is "Please select an option" — assert exactly that.
+    }
                 """;
     }
 

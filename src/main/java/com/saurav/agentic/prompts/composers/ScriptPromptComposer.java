@@ -21,6 +21,35 @@ public class ScriptPromptComposer {
                 Respond with PURE Java code only — no explanation, no markdown, no backticks.
                 Start your response directly with: package generated.ui;
                 
+                ASSERTION QUALITY RULES:
+				1. Default selected option — ALWAYS read from page metadata, never assume.
+				   The metadata shows which option has [SELECTED] tag — use that as the expected value.
+				   WRONG: Assert.assertTrue(option.contains("Option 1"))
+				   CORRECT: Assert.assertEquals(select.getFirstSelectedOption().getText(), "Please select an option")
+				
+				2. Dropdown value validation — ALWAYS use Select class, NEVER use element.getText()
+				   element.getText() on a <select> returns ALL option text concatenated — completely wrong.
+				   WRONG: String selected = page.getDropdown().getText()
+				   CORRECT: Select select = new Select(page.getDropdown());
+				            String selected = select.getFirstSelectedOption().getText();
+				
+				3. Assertion strength — use assertEquals not assertTrue/contains for exact values
+				   WRONG: Assert.assertTrue(selectedOption.contains("Option 2"))
+				   CORRECT: Assert.assertEquals(select.getFirstSelectedOption().getText(), "Option 2")
+				
+				4. Redundant waits — only wait ONCE before the action, never after
+				   WRONG: wait before + wait after every action
+				   CORRECT: wait.until(ExpectedConditions.visibilityOf(element)); // once before action
+				
+				5. Meaningful tests only — do NOT generate tests that repeat the same action twice
+				   unless the application has specific re-selection logic
+				   WRONG: selectOption("Option 1"); selectOption("Option 1");
+				   CORRECT: selectOption("Option 1"); verify; selectOption("Option 2"); verify change
+				
+				6. Base ALL assertions on actual DOM state from page metadata
+				   The metadata section contains actual option values, initial states, and element attributes.
+				   Use these EXACTLY — do not assume or invent values.
+                
                 """
                 + ProjectConfig.getBase() + "\n"
                 + ProjectConfig.getTestImports() + "\n"

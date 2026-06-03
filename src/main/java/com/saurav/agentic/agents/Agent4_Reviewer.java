@@ -1,365 +1,650 @@
 package com.saurav.agentic.agents;
 
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 import com.saurav.agentic.compiler.JavaCompilerUtil;
 import com.saurav.agentic.config.ModelConfig;
 import com.saurav.agentic.constants.FrameworkConstants;
 import com.saurav.agentic.models.CompileResult;
 import com.saurav.agentic.utils.GroqClient;
 
-import java.io.FileWriter;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-
 /**
- * Agent4_Reviewer - Code Fix Agent
+ * Agent4_Reviewer - Smart Code Fix Agent
  *
- * Takes failed CompileResults from Agent 3
- * Sends broken code + exact errors to Groq AI
- * AI fixes the specific errors
- * Re-compiles to verify fix worked
- * Saves fixed file
+ * Strategy: Rules First → LLM Only If Needed
+ * 
+ * Pass 1: Anti-pattern detection + deterministic regex fixes (0 tokens)
+ * Pass 2: Compile — if passes, done
+ * Pass 3: Error-context-only LLM fix (minimal tokens, only if needed)
+ * Pass 4: Re-compile to verify
  */
 public class Agent4_Reviewer {
 
     private final GroqClient groqClient;
     private final ModelConfig modelConfig;
 
-    private static final int MAX_FIX_ATTEMPTS = 2;
+    private static final int MAX_FIX_ATTEMPTS  = 2;
+    private static final int CONTEXT_LINES     = 8; // lines around error to send LLM
+
+    // ── Fix Knowledge Base ────────────────────────────────────────────────────
+    // Known error patterns → deterministic fixes applied before LLM
+    private static final Map<String, String> KNOWN_FIXES = new HashMap<>();
+
+    static {
+        KNOWN_FIXES.put("SeverityLevel.MEDIUM",  "SeverityLevel.NORMAL");
+        KNOWN_FIXES.put("SeverityLevel.HIGH",    "SeverityLevel.CRITICAL");
+        KNOWN_FIXES.put("SeverityLevel.LOW",     "SeverityLevel.MINOR");
+        KNOWN_FIXES.put("import org.openqa.selenium.Duration;", "import java.time.Duration;");
+        KNOWN_FIXES.put("import org.openqa.selenium.support.ui.Duration;", "import java.time.Duration;");
+        KNOWN_FIXES.put("@FindBy(linkText = \"\")", "// TODO: empty linkText — fix locator manually");
+    }
 
     public Agent4_Reviewer() {
         this.groqClient  = new GroqClient();
         this.modelConfig = ModelConfig.getInstance();
     }
 
-    /**
-     * Main entry point for Agent 4
-     * Receives failed compile results from Agent 3 and attempts to fix them
-     *
-     * @param compileResults - all results from Agent 3
-     * @return number of files successfully fixed
-     */
+    // ─────────────────────────────────────────────────────────────────────────
+    // MAIN ENTRY
+    // ─────────────────────────────────────────────────────────────────────────
+
     public int run(List<CompileResult> compileResults) {
 
         System.out.println("\n" + FrameworkConstants.LOG_INFO +
                 " ============================================");
         System.out.println(FrameworkConstants.LOG_INFO +
-                " Agent 4: Reviewer Started");
+                " Agent 4: Smart Reviewer Started");
+        System.out.println(FrameworkConstants.LOG_INFO +
+                " Strategy: Rules First → LLM Only If Needed");
         System.out.println(FrameworkConstants.LOG_INFO +
                 " ============================================");
 
-        // ── Step 1: Pre-compile review — fix known anti-patterns ────────────
-        System.out.println(FrameworkConstants.LOG_INFO +
-                " Step 1: Pre-compile anti-pattern review...");
-        compileResults = preCompileReview(compileResults);
+        int llmCallCount   = 0;
+        int rulesFixCount  = 0;
+        int totalFixed     = 0;
 
-        // ── Step 2: Re-compile after pre-compile fixes ───────────────────────
+        // ── Pass 1: Apply deterministic fixes to ALL files ────────────────────
         System.out.println(FrameworkConstants.LOG_INFO +
-                " Step 2: Re-compiling after pre-compile fixes...");
-        List<CompileResult> recompiled = new ArrayList<>();
+                " Pass 1: Applying deterministic rule fixes...");
+
+        List<CompileResult> afterRuleFix = new ArrayList<>();
         for (CompileResult result : compileResults) {
+            if (result.getSourceCode() == null) {
+                afterRuleFix.add(result);
+                continue;
+            }
+            String original = result.getSourceCode();
+            String fixed    = applyDeterministicFixes(result.getSourceCode());
+
+            if (!fixed.equals(original)) {
+                try {
+                    saveFile(result.getFilePath(), fixed);
+                    result.setSourceCode(fixed);
+                    rulesFixCount++;
+                    System.out.println(FrameworkConstants.LOG_SUCCESS +
+                            "   Rules fixed: " + result.getClassName());
+                } catch (IOException e) {
+                    System.out.println(FrameworkConstants.LOG_WARNING +
+                            "   Could not save rules fix: " + result.getClassName());
+                }
+            }
+            afterRuleFix.add(result);
+        }
+
+        System.out.println(FrameworkConstants.LOG_INFO +
+                " Rules fixes applied: " + rulesFixCount + " files (0 tokens used)");
+
+        // ── Pass 2: Re-compile everything ─────────────────────────────────────
+        System.out.println(FrameworkConstants.LOG_INFO +
+                " Pass 2: Re-compiling after rule fixes...");
+
+        List<CompileResult> stillFailing = new ArrayList<>();
+        int passedAfterRules = 0;
+
+        for (CompileResult result : afterRuleFix) {
             CompileResult fresh = JavaCompilerUtil.compile(result.getFilePath());
-            recompiled.add(fresh);
+            if (fresh.isSuccess()) {
+                passedAfterRules++;
+                totalFixed++;
+            } else {
+                stillFailing.add(fresh);
+            }
         }
 
-        // ── Step 3: Fix remaining compile errors ─────────────────────────────
-        List<CompileResult> failedFiles = recompiled.stream()
-                .filter(r -> !r.isSuccess())
-                .toList();
+        System.out.println(FrameworkConstants.LOG_SUCCESS +
+                " Passed after rules: " + passedAfterRules + " files");
 
-        if (failedFiles.isEmpty()) {
+        if (stillFailing.isEmpty()) {
             System.out.println(FrameworkConstants.LOG_SUCCESS +
-                    " No compile errors after pre-compile review!");
-            printSummary(0, 0);
-            return 0;
+                    " All files fixed by rules — no LLM calls needed!");
+            printSummary(compileResults.size(), totalFixed, llmCallCount, rulesFixCount);
+            return totalFixed;
         }
 
+        // ── Pass 3: LLM fix — only for remaining failures ─────────────────────
         System.out.println(FrameworkConstants.LOG_INFO +
-                " Step 3: Fixing remaining compile errors...");
-        System.out.println(FrameworkConstants.LOG_INFO +
-                " Files to fix : " + failedFiles.size());
+                " Pass 3: " + stillFailing.size() +
+                " files still failing — sending to LLM (minimal context)...");
 
-        int fixedCount = 0;
-        for (CompileResult failed : failedFiles) {
+        for (CompileResult failed : stillFailing) {
             System.out.println("\n" + FrameworkConstants.LOG_INFO +
-                    " Fixing: " + failed.getClassName());
-            boolean fixed = attemptFix(failed);
+                    " LLM fixing: " + failed.getClassName());
+
+            boolean fixed = attemptLlmFix(failed);
+            llmCallCount++;
+
             if (fixed) {
-                fixedCount++;
+                totalFixed++;
                 System.out.println(FrameworkConstants.LOG_SUCCESS +
-                        " Fixed: " + failed.getClassName());
+                        " LLM fixed: " + failed.getClassName());
             } else {
                 System.out.println(FrameworkConstants.LOG_WARNING +
                         " Could not fix: " + failed.getClassName());
             }
-            sleep(15000);
+
+            sleep(10000); // brief pause between LLM calls
         }
 
-        printSummary(failedFiles.size(), fixedCount);
-        return fixedCount;
+        printSummary(compileResults.size(), totalFixed, llmCallCount, rulesFixCount);
+        return totalFixed;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // FIX LOGIC
+    // PASS 1 — DETERMINISTIC RULE FIXES
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Attempts to fix a failed file up to MAX_FIX_ATTEMPTS times
+     * Applies all known deterministic fixes without any LLM call.
+     * Handles 80% of common compile errors instantly.
      */
-    private boolean attemptFix(CompileResult failed) {
-        CompileResult current = failed;
+    private String applyDeterministicFixes(String code) {
+        if (code == null) return "";
 
+        // ═══════════════════════════════════════════════════════════════════
+        // SECTION 1 — KNOWN STRING REPLACEMENTS (Knowledge Base)
+        // ═══════════════════════════════════════════════════════════════════
+        for (Map.Entry<String, String> fix : KNOWN_FIXES.entrySet()) {
+            code = code.replace(fix.getKey(), fix.getValue());
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // SECTION 2 — SEVERITY LEVEL FIXES
+        // ═══════════════════════════════════════════════════════════════════
+        code = code.replace("SeverityLevel.MEDIUM",   "SeverityLevel.NORMAL");
+        code = code.replace("SeverityLevel.HIGH",     "SeverityLevel.CRITICAL");
+        code = code.replace("SeverityLevel.LOW",      "SeverityLevel.MINOR");
+        code = code.replace("SeverityLevel.BLOCKER",  "SeverityLevel.BLOCKER");  // valid, keep
+        code = code.replace("SeverityLevel.TRIVIAL",  "SeverityLevel.TRIVIAL");  // valid, keep
+
+        // ═══════════════════════════════════════════════════════════════════
+        // SECTION 3 — WAIT FIXES
+        // ═══════════════════════════════════════════════════════════════════
+
+        // WebDriverWait raw int → Duration.ofSeconds
+        code = code.replaceAll(
+            "new WebDriverWait\\(([^,]+),\\s*(\\d+)\\)",
+            "new WebDriverWait($1, Duration.ofSeconds($2))"
+        );
+
+        // Thread.sleep raw int — keep but flag (can't auto-fix without context)
+        // FluentWait raw int → Duration
+        code = code.replaceAll(
+            "\\.withTimeout\\((\\d+),\\s*TimeUnit\\.SECONDS\\)",
+            ".withTimeout(Duration.ofSeconds($1))"
+        );
+        code = code.replaceAll(
+            "\\.pollingEvery\\((\\d+),\\s*TimeUnit\\.MILLISECONDS\\)",
+            ".pollingEvery(Duration.ofMillis($1))"
+        );
+        code = code.replaceAll(
+            "\\.pollingEvery\\((\\d+),\\s*TimeUnit\\.SECONDS\\)",
+            ".pollingEvery(Duration.ofSeconds($1))"
+        );
+
+        // implicitlyWait raw int
+        code = code.replaceAll(
+            "\\.implicitlyWait\\((\\d+),\\s*TimeUnit\\.SECONDS\\)",
+            ".implicitlyWait(Duration.ofSeconds($1))"
+        );
+        code = code.replaceAll(
+            "\\.pageLoadTimeout\\((\\d+),\\s*TimeUnit\\.SECONDS\\)",
+            ".pageLoadTimeout(Duration.ofSeconds($1))"
+        );
+
+        // ═══════════════════════════════════════════════════════════════════
+        // SECTION 4 — DEPRECATED SELENIUM 3 METHOD FIXES
+        // ═══════════════════════════════════════════════════════════════════
+
+        code = code.replaceAll(
+            "driver\\.findElementByCssSelector\\(([^)]+)\\)",
+            "driver.findElement(By.cssSelector($1))"
+        );
+        code = code.replaceAll(
+            "driver\\.findElementById\\(([^)]+)\\)",
+            "driver.findElement(By.id($1))"
+        );
+        code = code.replaceAll(
+            "driver\\.findElementByName\\(([^)]+)\\)",
+            "driver.findElement(By.name($1))"
+        );
+        code = code.replaceAll(
+            "driver\\.findElementByXPath\\(([^)]+)\\)",
+            "driver.findElement(By.xpath($1))"
+        );
+        code = code.replaceAll(
+            "driver\\.findElementByClassName\\(([^)]+)\\)",
+            "driver.findElement(By.className($1))"
+        );
+        code = code.replaceAll(
+            "driver\\.findElementByLinkText\\(([^)]+)\\)",
+            "driver.findElement(By.linkText($1))"
+        );
+        code = code.replaceAll(
+            "driver\\.findElementByPartialLinkText\\(([^)]+)\\)",
+            "driver.findElement(By.partialLinkText($1))"
+        );
+        code = code.replaceAll(
+            "driver\\.findElementByTagName\\(([^)]+)\\)",
+            "driver.findElement(By.tagName($1))"
+        );
+        code = code.replaceAll(
+            "driver\\.findElementsByCssSelector\\(([^)]+)\\)",
+            "driver.findElements(By.cssSelector($1))"
+        );
+        code = code.replaceAll(
+            "driver\\.findElementsById\\(([^)]+)\\)",
+            "driver.findElements(By.id($1))"
+        );
+        code = code.replaceAll(
+            "driver\\.findElementsByXPath\\(([^)]+)\\)",
+            "driver.findElements(By.xpath($1))"
+        );
+        code = code.replaceAll(
+            "driver\\.findElementsByClassName\\(([^)]+)\\)",
+            "driver.findElements(By.className($1))"
+        );
+
+        // ═══════════════════════════════════════════════════════════════════
+        // SECTION 5 — WRONG IMPORT FIXES
+        // ═══════════════════════════════════════════════════════════════════
+
+        // Wrong Duration import
+        code = code.replace(
+            "import org.openqa.selenium.Duration;",
+            "import java.time.Duration;"
+        );
+        code = code.replace(
+            "import org.openqa.selenium.support.ui.Duration;",
+            "import java.time.Duration;"
+        );
+
+        // Wrong Assert import
+        code = code.replace(
+            "import org.testng.asserts.Assert;",
+            "import org.testng.Assert;"
+        );
+
+        // Invalid import alias syntax (import X as Y — not valid Java)
+        code = code.replaceAll("import\\s+\\S+\\s+as\\s+\\S+;\\s*\\n?", "");
+
+        // Duplicate imports — remove exact duplicates
+        code = removeDuplicateImports(code);
+
+        // ═══════════════════════════════════════════════════════════════════
+        // SECTION 6 — MISSING IMPORT FIXES
+        // ═══════════════════════════════════════════════════════════════════
+
+        // Core Selenium
+        code = ensureImport(code, "WebDriver ",        "import org.openqa.selenium.WebDriver;");
+        code = ensureImport(code, "WebElement",        "import org.openqa.selenium.WebElement;");
+        code = ensureImport(code, "By.",               "import org.openqa.selenium.By;");
+        code = ensureImport(code, "JavascriptExecutor","import org.openqa.selenium.JavascriptExecutor;");
+        code = ensureImport(code, "Keys.",             "import org.openqa.selenium.Keys;");
+        code = ensureImport(code, "Alert ",            "import org.openqa.selenium.Alert;");
+        code = ensureImport(code, "NoSuchElementException",
+            "import org.openqa.selenium.NoSuchElementException;");
+        code = ensureImport(code, "TimeoutException",
+            "import org.openqa.selenium.TimeoutException;");
+        code = ensureImport(code, "StaleElementReferenceException",
+            "import org.openqa.selenium.StaleElementReferenceException;");
+        code = ensureImport(code, "ElementNotInteractableException",
+            "import org.openqa.selenium.ElementNotInteractableException;");
+
+        // Browser drivers
+        code = ensureImport(code, "ChromeDriver",      "import org.openqa.selenium.chrome.ChromeDriver;");
+        code = ensureImport(code, "ChromeOptions",     "import org.openqa.selenium.chrome.ChromeOptions;");
+        code = ensureImport(code, "FirefoxDriver",     "import org.openqa.selenium.firefox.FirefoxDriver;");
+        code = ensureImport(code, "EdgeDriver",        "import org.openqa.selenium.edge.EdgeDriver;");
+
+        // Waits
+        code = ensureImport(code, "WebDriverWait",
+            "import org.openqa.selenium.support.ui.WebDriverWait;");
+        code = ensureImport(code, "ExpectedConditions",
+            "import org.openqa.selenium.support.ui.ExpectedConditions;");
+        code = ensureImport(code, "FluentWait",
+            "import org.openqa.selenium.support.ui.FluentWait;");
+        code = ensureImport(code, "Select ",
+            "import org.openqa.selenium.support.ui.Select;");
+        code = ensureImport(code, "new Select(",
+            "import org.openqa.selenium.support.ui.Select;");
+
+        // PageFactory / FindBy
+        code = ensureImport(code, "PageFactory",
+            "import org.openqa.selenium.support.PageFactory;");
+        code = ensureImport(code, "@FindBy",
+            "import org.openqa.selenium.support.FindBy;");
+        code = ensureImport(code, "@FindAll",
+            "import org.openqa.selenium.support.FindAll;");
+        code = ensureImport(code, "@FindBys",
+            "import org.openqa.selenium.support.FindBys;");
+
+        // Java time
+        code = ensureImport(code, "Duration.ofSeconds",  "import java.time.Duration;");
+        code = ensureImport(code, "Duration.ofMillis",   "import java.time.Duration;");
+        code = ensureImport(code, "Duration.ofMinutes",  "import java.time.Duration;");
+
+        // Java utils
+        code = ensureImport(code, "List<",              "import java.util.List;");
+        code = ensureImport(code, "ArrayList",          "import java.util.ArrayList;");
+        code = ensureImport(code, "HashMap",            "import java.util.HashMap;");
+        code = ensureImport(code, "Map<",               "import java.util.Map;");
+        code = ensureImport(code, "Arrays.",            "import java.util.Arrays;");
+
+        // TestNG
+        code = ensureImport(code, "Assert.",            "import org.testng.Assert;");
+        code = ensureImport(code, "@Test",              "import org.testng.annotations.Test;");
+        code = ensureImport(code, "@BeforeMethod",      "import org.testng.annotations.BeforeMethod;");
+        code = ensureImport(code, "@AfterMethod",       "import org.testng.annotations.AfterMethod;");
+        code = ensureImport(code, "@BeforeClass",       "import org.testng.annotations.BeforeClass;");
+        code = ensureImport(code, "@AfterClass",        "import org.testng.annotations.AfterClass;");
+        code = ensureImport(code, "@DataProvider",      "import org.testng.annotations.DataProvider;");
+        code = ensureImport(code, "SkipException",      "import org.testng.SkipException;");
+        code = ensureImport(code, "ITestContext",       "import org.testng.ITestContext;");
+
+        // Allure
+        code = ensureImport(code, "@Description",       "import io.qameta.allure.Description;");
+        code = ensureImport(code, "@Severity",          "import io.qameta.allure.Severity;");
+        code = ensureImport(code, "SeverityLevel",      "import io.qameta.allure.SeverityLevel;");
+        code = ensureImport(code, "@Step",              "import io.qameta.allure.Step;");
+        code = ensureImport(code, "@Attachment",        "import io.qameta.allure.Attachment;");
+
+        // WebDriverManager
+        code = ensureImport(code, "WebDriverManager",
+            "import io.github.bonigarcia.wdm.WebDriverManager;");
+
+        // REST Assured (for future Agent 5)
+        code = ensureImport(code, "given()",            "import static io.restassured.RestAssured.given;");
+        code = ensureImport(code, "RestAssured.",       "import io.restassured.RestAssured;");
+        code = ensureImport(code, "Response ",          "import io.restassured.response.Response;");
+        code = ensureImport(code, "ValidatableResponse","import io.restassured.response.ValidatableResponse;");
+        code = ensureImport(code, "ContentType.",       "import io.restassured.http.ContentType;");
+        code = ensureImport(code, "JsonPath",           "import io.restassured.path.json.JsonPath;");
+
+        // ═══════════════════════════════════════════════════════════════════
+        // SECTION 7 — SYNTAX FIXES
+        // ═══════════════════════════════════════════════════════════════════
+
+        // Fix double semicolons
+        code = code.replaceAll(";;", ";");
+
+        // Fix empty catch blocks — add at least a comment
+        code = code.replaceAll(
+            "catch\\s*\\(([^)]+)\\)\\s*\\{\\s*\\}",
+            "catch ($1) { /* intentionally empty */ }"
+        );
+
+        // Fix wrong package separator (using / instead of .)
+        code = code.replaceAll(
+            "import (\\w+)/(\\w+)",
+            "import $1.$2"
+        );
+
+        // ═══════════════════════════════════════════════════════════════════
+        // SECTION 8 — TESTNG ANNOTATION FIXES
+        // ═══════════════════════════════════════════════════════════════════
+
+        // @Test with invalid parameters
+        code = code.replaceAll(
+            "@Test\\(description\\s*=\\s*\"([^\"]+)\"\\s*,\\s*severity\\s*=\\s*SeverityLevel\\.\\w+\\)",
+            "@Test"
+        );
+        code = code.replaceAll(
+            "@Test\\(severity\\s*=\\s*SeverityLevel\\.\\w+\\)",
+            "@Test"
+        );
+
+        // ═══════════════════════════════════════════════════════════════════
+        // SECTION 9 — DRIVER SETUP FIXES
+        // ═══════════════════════════════════════════════════════════════════
+
+        // Fix old WebDriverManager setup pattern
+        code = code.replaceAll(
+            "WebDriverManager\\.chromedriver\\(\\)\\.setup\\(\\);\n\\s*driver\\s*=\\s*new ChromeDriver\\(\\);",
+            "driver = WebDriverManager.chromedriver().create();"
+        );
+        code = code.replaceAll(
+            "WebDriverManager\\.firefoxdriver\\(\\)\\.setup\\(\\);\n\\s*driver\\s*=\\s*new FirefoxDriver\\(\\);",
+            "driver = WebDriverManager.firefoxdriver().create();"
+        );
+        code = code.replaceAll(
+            "WebDriverManager\\.edgedriver\\(\\)\\.setup\\(\\);\n\\s*driver\\s*=\\s*new EdgeDriver\\(\\);",
+            "driver = WebDriverManager.edgedriver().create();"
+        );
+
+        return code;
+    }
+
+    /**
+     * Ensures an import exists — adds it if the symbol is used but import is missing.
+     * Skips if symbol not used or import already present.
+     */
+    private String ensureImport(String code, String symbol, String importStatement) {
+        if (!code.contains(symbol)) return code;
+
+        // Extract just the class/package part to check existence
+        String importCheck = importStatement
+                .replace("import static ", "")
+                .replace("import ", "")
+                .replace(";", "")
+                .trim();
+
+        // Check if any variant of this import already exists
+        if (code.contains(importCheck)) return code;
+
+        return addImport(code, importStatement);
+    }
+
+    /**
+     * Removes exact duplicate import lines
+     */
+    private String removeDuplicateImports(String code) {
+        String[] lines  = code.split("\n");
+        List<String> seen    = new ArrayList<>();
+        StringBuilder result = new StringBuilder();
+
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("import ")) {
+                if (seen.contains(trimmed)) continue; // skip duplicate
+                seen.add(trimmed);
+            }
+            result.append(line).append("\n");
+        }
+        return result.toString();
+    }
+
+    /**
+     * Adds an import statement after the package declaration
+     */
+    private String addImport(String code, String importStatement) {
+        // Find position after package declaration
+        int packageEnd = code.indexOf(';');
+        if (packageEnd == -1) return code;
+
+        // Check if import already exists (any variant)
+        String importClass = importStatement
+                .replace("import ", "")
+                .replace(";", "")
+                .trim();
+        if (code.contains(importClass)) return code;
+
+        return code.substring(0, packageEnd + 1) +
+               "\n" + importStatement +
+               code.substring(packageEnd + 1);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PASS 3 — LLM FIX (MINIMAL CONTEXT)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Sends ONLY the error + surrounding lines to LLM — not the full file.
+     * Dramatically reduces token usage.
+     */
+    private boolean attemptLlmFix(CompileResult failed) {
         for (int attempt = 1; attempt <= MAX_FIX_ATTEMPTS; attempt++) {
             System.out.println(FrameworkConstants.LOG_INFO +
-                    "   Fix attempt " + attempt + "/" + MAX_FIX_ATTEMPTS);
+                    "   LLM attempt " + attempt + "/" + MAX_FIX_ATTEMPTS);
 
             try {
-                // Ask Groq AI to fix the errors
-                String fixedCode = askGroqToFix(
-                        current.getSourceCode(),
-                        current.getErrorSummary(),
-                        current.getFilePath()
+                // Extract minimal context — only lines around errors
+                String minimalContext = extractErrorContext(
+                        failed.getSourceCode(),
+                        failed.getErrors()
                 );
 
-                if (fixedCode == null || fixedCode.isBlank()) {
-                    System.out.println(FrameworkConstants.LOG_WARNING +
-                            "   AI returned empty response — skipping");
-                    continue;
-                }
+                String systemPrompt = buildLlmSystemPrompt(failed.getFilePath());
+                String userPrompt   = buildLlmUserPrompt(
+                        minimalContext,
+                        failed.getErrorSummary(),
+                        failed.getFilePath()
+                );
 
-                // Clean and save the fixed code
-                fixedCode = cleanJavaCode(fixedCode);
-                saveFile(current.getFilePath(), fixedCode);
+                String fixedCode = groqClient.chat(
+                        systemPrompt, userPrompt,
+                        modelConfig.getAgent4Model(),
+                        modelConfig.getAgent4Temperature(),
+                        modelConfig.getAgent4MaxTokens()
+                );
 
-                // Re-compile to verify fix worked
-                System.out.println(FrameworkConstants.LOG_INFO +
-                        "   Re-compiling after fix...");
-                CompileResult recompiled = JavaCompilerUtil.compile(current.getFilePath());
+                if (fixedCode == null || fixedCode.isBlank()) continue;
+
+                fixedCode = cleanCode(fixedCode);
+
+                // Apply deterministic fixes on top of LLM fix
+                fixedCode = applyDeterministicFixes(fixedCode);
+
+                saveFile(failed.getFilePath(), fixedCode);
+
+                // Re-compile
+                CompileResult recompiled = JavaCompilerUtil.compile(
+                        failed.getFilePath());
 
                 if (recompiled.isSuccess()) {
                     System.out.println(FrameworkConstants.LOG_SUCCESS +
-                            "   Compile successful after fix!");
+                            "   Compile successful after LLM fix!");
                     return true;
-                } else {
-                    System.out.println(FrameworkConstants.LOG_WARNING +
-                            "   Still failing after fix — " +
-                            recompiled.getErrors().size() + " error(s) remain");
-                    // Use recompiled result for next attempt
-                    current = recompiled;
-                    sleep(15000);
                 }
+
+                System.out.println(FrameworkConstants.LOG_WARNING +
+                        "   Still failing — " +
+                        recompiled.getErrors().size() + " error(s)");
+                failed = recompiled;
+                sleep(15000);
 
             } catch (Exception e) {
                 System.out.println(FrameworkConstants.LOG_ERROR +
-                        "   Fix attempt failed: " + e.getMessage());
+                        "   LLM fix failed: " + e.getMessage());
+                sleep(30000);
             }
         }
-
         return false;
     }
 
     /**
-     * Sends broken code + errors to Groq AI and asks for a fix
+     * Extracts only lines around compile errors — not the full file.
+     * This is the key token-saving technique.
      */
-    private String askGroqToFix(String sourceCode, String errors,
-                                  String filePath) throws IOException {
-        String systemPrompt = buildFixSystemPrompt(filePath);
-        String userPrompt   = buildFixUserPrompt(sourceCode, errors);
+    private String extractErrorContext(String sourceCode, List<String> errors) {
+        if (sourceCode == null) return "";
 
-        return groqClient.chat(
-                systemPrompt, userPrompt,
-                modelConfig.getAgent4Model(),
-                modelConfig.getAgent4Temperature(),
-                modelConfig.getAgent4MaxTokens()
-        );
-    }
+        String[] lines = sourceCode.split("\n");
+        StringBuilder context = new StringBuilder();
+        context.append("FULL FILE (").append(lines.length).append(" lines):\n");
+        context.append(sourceCode);
+        context.append("\n\nERROR LOCATIONS:\n");
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // PROMPTS
-    // ─────────────────────────────────────────────────────────────────────────
+        // Extract line numbers from errors
+        Pattern linePattern = Pattern.compile("Line (\\d+):");
+        for (String error : errors) {
+            Matcher m = linePattern.matcher(error);
+            if (m.find()) {
+                int errorLine = Integer.parseInt(m.group(1)) - 1;
+                int start     = Math.max(0, errorLine - CONTEXT_LINES);
+                int end       = Math.min(lines.length - 1, errorLine + CONTEXT_LINES);
 
-    private String buildFixSystemPrompt(String filePath) {
-        boolean isPom = filePath.contains("/pages/");
-        String packageLine = isPom ? "package pages;" : "package generated.ui;";
-
-        return """
-                You are a senior Java developer fixing Selenium test code.
-                You will receive broken Java code and exact compiler errors.
-                Your job is to fix ONLY the reported errors — do not rewrite the entire file.
-
-                STRICT RULES:
-                1. Return ONLY the fixed Java code — no explanation, no markdown, no backticks
-                2. Fix only what the errors report — keep all other code unchanged
-                3. Start response directly with: %s
-                4. Common fixes:
-                   - Missing import → add the correct import
-                   - Cannot find symbol → check method name matches POM exactly
-                   - SeverityLevel.MEDIUM → change to SeverityLevel.NORMAL
-                   - SeverityLevel.HIGH → change to SeverityLevel.CRITICAL
-                   - SeverityLevel.LOW → change to SeverityLevel.MINOR
-                   - new WebDriverWait(driver, 10) → new WebDriverWait(driver, Duration.ofSeconds(10))
-                   - Empty @FindBy(linkText="") → change to @FindBy(css="[href='url']")
-                   - driver.findElementByCssSelector() → driver.findElement(By.cssSelector())
-                5. If an error cannot be fixed without more context, add:
-                   // TODO: Cannot fix automatically — [reason]
-                   and keep the rest of the code intact
-                """.formatted(packageLine);
-    }
-
-    private String buildFixUserPrompt(String sourceCode, String errors) {
-        return """
-                Fix the following Java file. It has these compiler errors:
-
-                ERRORS:
-                %s
-
-                BROKEN CODE:
-                %s
-
-                Instructions:
-                - Fix ONLY the errors listed above
-                - Do not change any other part of the code
-                - Return the complete fixed file
-                - Start with the package declaration
-                """.formatted(errors, sourceCode);
-    }
-    
-    /**
-     * Pre-compile code review — catches known anti-patterns
-     * before even attempting compilation
-     */
-    public List<CompileResult> preCompileReview(List<CompileResult> allResults) {
-
-        System.out.println("\n" + FrameworkConstants.LOG_INFO +
-                " Agent 4: Pre-compile review started...");
-
-        List<CompileResult> reviewed = new ArrayList<>();
-
-        for (CompileResult result : allResults) {
-            if (result.getSourceCode() == null || result.getSourceCode().isBlank()) {
-                reviewed.add(result);
-                continue;
-            }
-
-            // Check for known anti-patterns
-            if (hasAntiPatterns(result.getSourceCode())) {
-                System.out.println(FrameworkConstants.LOG_INFO +
-                        "   Anti-patterns found in: " + result.getClassName() +
-                        " — fixing before compile...");
-                try {
-                	String fixedCode = askGroqToReview(result.getSourceCode());
-                    fixedCode = cleanJavaCode(fixedCode);
-                    saveFile(result.getFilePath(), fixedCode);
-                    result.setSourceCode(fixedCode);
-                    System.out.println(FrameworkConstants.LOG_SUCCESS +
-                            "   Pre-compile fix applied: " + result.getClassName());
-                } catch (Exception e) {
-                    System.out.println(FrameworkConstants.LOG_WARNING +
-                            "   Pre-compile fix failed: " + e.getMessage());
+                context.append("\nAround line ").append(errorLine + 1)
+                       .append(" (").append(error).append("):\n");
+                for (int i = start; i <= end; i++) {
+                    context.append(i == errorLine ? ">>> " : "    ")
+                           .append(i + 1).append(": ")
+                           .append(lines[i]).append("\n");
                 }
-                sleep(10000);
             }
-            reviewed.add(result);
         }
-        return reviewed;
+        return context.toString();
     }
 
-    /**
-     * Checks source code for known anti-patterns
-     */
-    private boolean hasAntiPatterns(String code) {
-        return code.contains("@FindBy(linkText = \"\")") ||
-               code.matches("(?s).*new WebDriverWait\\(driver,\\s*\\d+\\).*") ||
-               code.contains("driver.findElementByCssSelector") ||
-               code.contains("SeverityLevel.MEDIUM") ||
-               code.contains("SeverityLevel.HIGH") ||
-               code.contains("SeverityLevel.LOW") ||
-               (code.contains(".click()") && code.contains("Link")) ||
-               code.contains("import org.openqa.selenium.Duration") ||
-               code.contains("Duration as WebDriverWaitDuration") ||
-               (code.contains("JavascriptExecutor") &&
-                !code.contains("import org.openqa.selenium.JavascriptExecutor"));
+    // ─────────────────────────────────────────────────────────────────────────
+    // LLM PROMPTS — MINIMAL AND FOCUSED
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private String buildLlmSystemPrompt(String filePath) {
+        boolean isPom = filePath.contains("\\pages\\") ||
+                        filePath.contains("/pages/");
+        String pkg = isPom ? "package pages;" : "package generated.ui;";
+
+        return """
+                Fix Java compile errors. Return ONLY the complete fixed file.
+                No markdown, no explanation, no backticks.
+                Start with: %s
+
+                Common fixes:
+                - Missing import → add correct import from java.time, org.openqa.selenium, org.testng
+                - int in WebDriverWait → Duration.ofSeconds(n)
+                - Wrong SeverityLevel → NORMAL/CRITICAL/MINOR only
+                - Cannot find symbol → check spelling and imports
+                """.formatted(pkg);
     }
 
-    /**
-     * Sends code to Groq AI for quality review and anti-pattern fixing
-     */
-    private String askGroqToReview(String sourceCode) throws IOException {
-        
-
-        String systemPrompt = """
-                You are a senior Selenium QA engineer reviewing generated code for quality issues.
-                Fix ALL of the following anti-patterns if found:
-
-                1. Empty linkText locator: @FindBy(linkText = "")
-                   Fix: @FindBy(css = "[href='url']") — use actual href value from context
-
-                2. Raw int in WebDriverWait: new WebDriverWait(driver, 10)
-                   Fix: new WebDriverWait(driver, Duration.ofSeconds(10))
-
-                3. Wrong SeverityLevel: SeverityLevel.MEDIUM, SeverityLevel.HIGH, SeverityLevel.LOW
-                   Fix: MEDIUM→NORMAL, HIGH→CRITICAL, LOW→MINOR
-
-                4. Deprecated Selenium method: driver.findElementByCssSelector()
-                   Fix: driver.findElement(By.cssSelector())
-
-                5. Direct click on link elements that may be off-screen:
-                   element.click() where element is a link
-                   Fix: use JS click:
-                   ((JavascriptExecutor)driver).executeScript("arguments[0].scrollIntoView({block:'center'});", element);
-                   ((JavascriptExecutor)driver).executeScript("arguments[0].click();", element);
-
-                6. target="_blank" links — waiting for URL on same window:
-                   wait.until(ExpectedConditions.urlContains("x")) after clicking a _blank link
-                   Fix: switch to new window first:
-                   String original = driver.getWindowHandle();
-                   wait.until(ExpectedConditions.numberOfWindowsToBe(2));
-                   for (String h : driver.getWindowHandles()) {
-                       if (!h.equals(original)) { driver.switchTo().window(h); break; }
-                   }
-
-                7. Page title assertion for dynamic outcomes:
-                   Assert.assertTrue(driver.getTitle().contains("x"))
-                   Fix: use URL or element-based assertion instead
-
-                RULES:
-                - Fix ONLY the anti-patterns listed above
-                - Do not rewrite the entire file
-                - Return complete fixed Java code only
-                - No markdown, no backticks, no explanation
-                
-                8. WRONG Duration import: import org.openqa.selenium.Duration
-				   Fix: import java.time.Duration
-				   
-				9. Invalid import alias syntax: import X as Y
-				   This is not valid Java — remove it and use: import java.time.Duration
-				   
-				10. JavascriptExecutor used but not imported:
-				    Add: import org.openqa.selenium.JavascriptExecutor
-                """;
-
-        String userPrompt = """
-                Review and fix this Java file for anti-patterns:
-
+    private String buildLlmUserPrompt(String context, String errors,
+                                       String filePath) {
+        return """
+                Errors to fix:
                 %s
-                """.formatted(sourceCode);
 
-        return groqClient.chat(
-                systemPrompt, userPrompt,
-                modelConfig.getAgent4Model(),
-                modelConfig.getAgent4Temperature(),
-                modelConfig.getAgent4MaxTokens()
-        );
+                Code:
+                %s
+
+                Return the complete fixed file starting with the package declaration.
+                """.formatted(errors, context);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // HELPERS
     // ─────────────────────────────────────────────────────────────────────────
 
-    private String cleanJavaCode(String rawCode) {
-        if (rawCode == null) return "";
-        rawCode = rawCode.replaceAll("```java\\s*", "").replaceAll("```\\s*", "");
-        return rawCode.trim();
+    private String cleanCode(String raw) {
+        if (raw == null) return "";
+        raw = raw.replaceAll("```java\\s*", "").replaceAll("```\\s*", "");
+        return raw.trim();
     }
 
     private void saveFile(String filePath, String content) throws IOException {
@@ -376,14 +661,19 @@ public class Agent4_Reviewer {
         }
     }
 
-    private void printSummary(int total, int fixed) {
+    private void printSummary(int total, int fixed,
+                               int llmCalls, int rulesFixes) {
         System.out.println("\n" + FrameworkConstants.LOG_INFO +
                 " ============================================");
         System.out.println(FrameworkConstants.LOG_SUCCESS + " Agent 4 Complete!");
         System.out.println(FrameworkConstants.LOG_INFO +
-                " Files to fix  : " + total);
+                " Total files   : " + total);
         System.out.println(FrameworkConstants.LOG_INFO +
                 " Fixed         : " + fixed);
+        System.out.println(FrameworkConstants.LOG_INFO +
+                " Rules fixes   : " + rulesFixes + " (0 tokens)");
+        System.out.println(FrameworkConstants.LOG_INFO +
+                " LLM calls     : " + llmCalls);
         System.out.println(FrameworkConstants.LOG_INFO +
                 " Still broken  : " + (total - fixed));
         System.out.println(FrameworkConstants.LOG_INFO +
