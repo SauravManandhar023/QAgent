@@ -8,6 +8,8 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * ExcelUtil - Handles reading and writing test cases to Excel
@@ -39,7 +41,45 @@ public class ExcelUtil {
         System.out.println(FrameworkConstants.LOG_SUCCESS + " Excel saved: " + filePath);
         System.out.println(FrameworkConstants.LOG_SUCCESS + " Total test cases: " + testCases.size());
     }
+    
+    /**
+     * Append Instead of Overwrite
+     */
+    public static void appendTestCases(String filePath,
+            List<TestCase> newCases,
+            boolean isFirstRun) throws IOException {
+        if (isFirstRun) {
+            // Fresh write — existing behavior
+            writeTestCases(newCases, filePath);  // ← correct method + order
+            return;
+        }
 
+        // Incremental — read existing, append new, save all
+        List<TestCase> existing = readTestCases(filePath);
+
+        // Deduplicate by name before appending
+        Set<String> existingNames = existing.stream()
+                .map(tc -> tc.getTestCaseName().toLowerCase().trim())
+                .collect(Collectors.toSet());
+
+        List<TestCase> deduplicated = newCases.stream()
+                .filter(tc -> !existingNames.contains(
+                        tc.getTestCaseName().toLowerCase().trim()))
+                .toList();
+
+        System.out.println(FrameworkConstants.LOG_INFO +
+                " New unique test cases to append: " + deduplicated.size() +
+                " (skipped " + (newCases.size() - deduplicated.size()) +
+                " duplicates)");
+
+        existing.addAll(deduplicated);
+        writeTestCases(existing, filePath);  // ← correct method + order
+
+        System.out.println(FrameworkConstants.LOG_SUCCESS +
+                " Excel updated: " + existing.size() + " total test cases");
+    }
+    
+    
     /**
      * Create Summary sheet
      */

@@ -428,6 +428,10 @@ public class PageMetadataExtractor {
                 metadata.setFailureCondition(
                     "URL does not change or element not found");
                 metadata.setPrimaryAction("Navigate via links");
+                metadata.setSuccessCondition(
+                        "URL changes after clicking link. " +
+                        "If URL contains '#google_vignette' an ad intercepted — " +
+                        "wait for it to clear before asserting URL.");
             }
             default -> {
                 metadata.setSuccessCondition(

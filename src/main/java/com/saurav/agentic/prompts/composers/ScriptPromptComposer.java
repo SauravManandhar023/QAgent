@@ -49,6 +49,16 @@ public class ScriptPromptComposer {
 				6. Base ALL assertions on actual DOM state from page metadata
 				   The metadata section contains actual option values, initial states, and element attributes.
 				   Use these EXACTLY — do not assume or invent values.
+				   
+				7. AD OVERLAY HANDLING:
+				- If URL contains "#google_vignette" after a click, an ad intercepted the click
+				- Handle by waiting for the overlay to disappear before clicking:
+				  wait.until(ExpectedConditions.not(
+				      ExpectedConditions.urlContains("google_vignette")
+				  ));
+				  // then retry the click
+				- Or dismiss using JavaScript:
+				  js.executeScript("document.querySelector('.modal, .overlay, [id*=vignette]')?.remove()");
                 
                 """
                 + ProjectConfig.getBase() + "\n"

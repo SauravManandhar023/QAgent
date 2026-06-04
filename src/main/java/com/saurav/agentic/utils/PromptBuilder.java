@@ -1,5 +1,7 @@
 package com.saurav.agentic.utils;
 
+import java.util.Set;
+
 /**
  * PromptBuilder - Builds structured prompts for Groq AI
  * Separates prompt logic from agent logic
@@ -133,31 +135,37 @@ public class PromptBuilder {
 				    A test asserting the default value must use the [CURRENTLY_SELECTED_DEFAULT] option text,
 				    not guess "Option 1" or any other value.
 				    If the default is "Please select an option" — assert exactly that.
+				19. automationFeasible must be false if:
+				    - The test requires keyboard navigation
+				    - The test requires screen reader verification
+				    - The test requires verifying CSS styling or visual appearance
+				    - The element has no reliable locator (no id, name, class, or text)
+				    - The test requires file upload or download verification
+				    - The test requires CAPTCHA interaction
+				    Set automationFeasible = true ONLY if Selenium can fully execute it
+				    without any manual steps.
     }
                 """;
     }
 
-    public static String uiTestCaseUserPrompt(String pageAnalysis, String url) {
-        return """
-                Analyze the following web page and generate comprehensive test cases.
-                
-                Target URL: %s
-                
-                PAGE ANALYSIS:
-                %s
-                
-                Requirements:
-                - Generate at least 15 test cases covering all UI components found
-                - Cover all 4 test types: Positive, Negative, Edge, Accessibility
-                - Focus on form validation, button interactions, and navigation
-                - Make test steps detailed and executable by an automation engineer
-                - Set automationFeasible=true for cases that can be automated with Selenium
-                - Set automationFeasible=false for visual/manual-only cases
-                - testData must have real specific values — never generic placeholders
-                
-                Return ONLY the JSON array. Start with [ and end with ]
-                """.formatted(url, pageAnalysis);
-    }
+		    public static String uiTestCaseUserPrompt(String pageAnalysis, 
+		            Set<String> existingTestNames) {
+		StringBuilder sb = new StringBuilder();
+		sb.append("Page Analysis:\n").append(pageAnalysis).append("\n\n");
+		
+		if (existingTestNames != null && !existingTestNames.isEmpty()) {
+		sb.append("ALREADY COVERED TEST CASES (do NOT regenerate these):\n");
+		for (String name : existingTestNames) {
+		sb.append("- ").append(name).append("\n");
+		}
+		sb.append("\nGenerate 15 NEW test cases that are NOT in the list above.\n");
+		sb.append("Focus on areas and scenarios not yet covered.\n\n");
+		} else {
+		sb.append("Generate 15 test cases for this page.\n\n");
+		}
+		
+		return sb.toString();
+		}
 
     // ===================================================
     // AGENT 2 - SELENIUM SCRIPT GENERATION PROMPTS

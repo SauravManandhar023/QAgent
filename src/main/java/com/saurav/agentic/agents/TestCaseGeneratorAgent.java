@@ -10,11 +10,15 @@ import com.saurav.agentic.utils.ExcelUtil;
 import com.saurav.agentic.utils.GroqClient;
 import com.saurav.agentic.utils.PromptBuilder;
 import com.saurav.agentic.utils.SeleniumScraper;
+import com.saurav.agentic.config.ModelConfig;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * TestCaseGeneratorAgent - Agent 1
@@ -31,12 +35,14 @@ public class TestCaseGeneratorAgent {
 
     private final FrameworkConfig config;
     private final SeleniumScraper scraper;
+    private final ModelConfig modelConfig;
     private final GroqClient groqClient;
     private String lastPageAnalysis = "";
 
     public TestCaseGeneratorAgent() {
         this.config = FrameworkConfig.getInstance();
         this.scraper = new SeleniumScraper();
+        this.modelConfig = ModelConfig.getInstance();
         this.groqClient = new GroqClient();
     }
 
@@ -54,12 +60,27 @@ public class TestCaseGeneratorAgent {
         String pageAnalysis = scraper.scrape(url);
         this.lastPageAnalysis = pageAnalysis;
         System.out.println(FrameworkConstants.LOG_SUCCESS + " Scraping complete!");
+        
+        // ── Step 1.5: Load existing test cases ───────────────────────────
+        String excelPath = FrameworkConfig.getInstance().getUiExcelOutputPath();
+        Set<String> existingNames = loadExistingTestCaseNames(excelPath);
 
-        // Step 2: Send to Groq AI
+        boolean isFirstRun = existingNames.isEmpty();
+
+        System.out.println(FrameworkConstants.LOG_INFO +
+                " Mode: " + (isFirstRun ? "Fresh generation" : 
+                "Incremental — " + existingNames.size() + " existing cases found"));
+        
+
+     // Step 2: Send to Groq AI
         System.out.println("\n[STEP 2] Sending to Groq AI...");
         String systemPrompt = PromptBuilder.uiTestCaseSystemPrompt();
-        String userPrompt = PromptBuilder.uiTestCaseUserPrompt(pageAnalysis, url);
-        String aiResponse = groqClient.chat(systemPrompt, userPrompt);
+        String userPrompt = PromptBuilder.uiTestCaseUserPrompt(pageAnalysis, existingNames);
+        String aiResponse = groqClient.chat(systemPrompt, userPrompt, 
+                modelConfig.getAgent1Model(),
+                modelConfig.getAgent1Temperature(),
+                modelConfig.getAgent1MaxTokens()
+        );
         System.out.println(FrameworkConstants.LOG_SUCCESS + " AI response received!");
 
         // Step 3: Parse response
@@ -67,11 +88,9 @@ public class TestCaseGeneratorAgent {
         List<TestCase> testCases = parseTestCases(aiResponse);
         System.out.println(FrameworkConstants.LOG_SUCCESS + " Parsed: " + testCases.size() + " test cases!");
 
-        // Step 4: Save to Excel
-        System.out.println("\n[STEP 4] Saving to Excel...");
-        String excelPath = config.getUiExcelOutputPath();
-        ExcelUtil.writeTestCases(testCases, excelPath);
-        System.out.println(FrameworkConstants.LOG_SUCCESS + " Excel saved: " + excelPath);
+     // ── Step 4: Save to Excel (append mode) ──────────────────────────
+        System.out.println(FrameworkConstants.LOG_INFO + " [STEP 4] Saving to Excel...");
+        ExcelUtil.appendTestCases(excelPath, testCases, isFirstRun);
 
         // Step 5: Print summary
         System.out.println(FrameworkConstants.LOG_SEPARATOR);
@@ -206,5 +225,25 @@ public class TestCaseGeneratorAgent {
     
     public String getLastPageAnalysis() {
         return lastPageAnalysis;
+    }
+    
+    //Read existing excel before generating new test cases
+    private Set<String> loadExistingTestCaseNames(String excelPath) {
+        Set<String> existing = new HashSet<>();
+        File file = new File(excelPath);
+        if (!file.exists()) return existing;
+
+        try {
+            List<TestCase> existingCases = ExcelUtil.readTestCases(excelPath);
+            for (TestCase tc : existingCases) {
+                existing.add(tc.getTestCaseName().toLowerCase().trim());
+            }
+            System.out.println(FrameworkConstants.LOG_INFO +
+                    " Found " + existing.size() + " existing test cases in Excel");
+        } catch (Exception e) {
+            System.out.println(FrameworkConstants.LOG_WARNING +
+                    " Could not read existing Excel — starting fresh");
+        }
+        return existing;
     }
 }
