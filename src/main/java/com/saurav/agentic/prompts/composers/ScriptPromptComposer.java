@@ -59,6 +59,11 @@ public class ScriptPromptComposer {
 				  // then retry the click
 				- Or dismiss using JavaScript:
 				  js.executeScript("document.querySelector('.modal, .overlay, [id*=vignette]')?.remove()");
+				 
+				8. AD OVERLAY RULE:
+					- On sites with ads, before clicking any navigation link call dismissAdOverlay()
+					- After clicking a link, use urlContains("keyword") not exact URL match
+					- If URL contains "#google_vignette" the ad intercepted — dismiss and retry
                 
                 """
                 + ProjectConfig.getBase() + "\n"

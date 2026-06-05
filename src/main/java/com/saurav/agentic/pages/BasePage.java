@@ -193,6 +193,33 @@ public class BasePage {
             "return document.readyState"
         ).equals("complete"));
     }
+    
+    /**
+     * Dismisses Google ad vignette overlay if present.
+     * Call this before clicking any navigation link on ad-heavy sites.
+     */
+    protected void dismissAdOverlay() {
+        try {
+            // Wait briefly for potential ad overlay
+            Thread.sleep(1500);
+            String currentUrl = driver.getCurrentUrl();
+            if (currentUrl.contains("google_vignette") || 
+                currentUrl.contains("#")) {
+                // Navigate back to clean URL
+                String cleanUrl = currentUrl.split("#")[0];
+                driver.get(cleanUrl);
+                Thread.sleep(1000);
+            }
+            // Try to remove overlay via JS
+            js.executeScript(
+                "var overlays = document.querySelectorAll(" +
+                "'[id*=vignette],[class*=vignette]," +
+                "[id*=overlay],[class*=overlay]," +
+                "[id*=modal],[class*=ad-modal]');" +
+                "overlays.forEach(el => el.remove());"
+            );
+        } catch (Exception ignored) {}
+    }
 
     // ─── Utility ──────────────────────────────────────────────────────────────
 
