@@ -64,6 +64,10 @@ public class FrameworkConfig {
     public String getUiExcelOutputPath() {
         return reader.get("output.excel.ui", FrameworkConstants.OUTPUT_EXCEL_UI);
     }
+    
+    public String getApiBaseUrl() {
+        return reader.get("api.base.url", "https://automationexercise.com");
+    }
 
     public String getApiExcelOutputPath() {
         return reader.get("output.excel.api", FrameworkConstants.OUTPUT_EXCEL_API);
@@ -120,4 +124,5 @@ public class FrameworkConfig {
         System.out.println("  Explicit Wait: " + getExplicitWait() + "s");
         System.out.println(FrameworkConstants.LOG_SEPARATOR + "\n");
     }
+    
 }

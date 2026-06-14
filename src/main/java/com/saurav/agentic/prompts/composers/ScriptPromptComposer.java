@@ -64,7 +64,13 @@ public class ScriptPromptComposer {
 					- On sites with ads, before clicking any navigation link call dismissAdOverlay()
 					- After clicking a link, use urlContains("keyword") not exact URL match
 					- If URL contains "#google_vignette" the ad intercepted — dismiss and retry
-                
+                9. LOCATOR RULES FOR DYNAMIC CONTENT:
+					- Brand/category links with product counts use partialLinkText not full linkText
+					  WRONG: @FindBy(linkText = "(6) POLO")
+					  CORRECT: @FindBy(partialLinkText = "POLO")
+					  OR: @FindBy(css = "a[href*='polo']")
+					- Never hardcode numbers that appear before brand names in parentheses
+					- For sidebar filter links always prefer CSS href selector over linkText
                 """
                 + ProjectConfig.getBase() + "\n"
                 + ProjectConfig.getTestImports() + "\n"

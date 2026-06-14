@@ -144,7 +144,32 @@ public class PromptBuilder {
 				    - The test requires CAPTCHA interaction
 				    Set automationFeasible = true ONLY if Selenium can fully execute it
 				    without any manual steps.
-    }
+				    
+				 20. NEVER use linkText locators that contain dynamic or volatile content
+				    Dynamic content includes:
+				    - Numbers in parentheses: "(6) POLO", "(12) Items"
+				    - counts, quantities, prices, dates, timestamps
+				    - Any text that changes between page loads or user sessions
+				    Instead use:
+				    - partialLinkText: stable part of the text only e.g. "POLO" not "(6) POLO"
+				    - CSS: a[href*='keyword'] when href is stable
+				    - XPath: //a[contains(text(),'keyword')] for partial text matching
+				    Rule: if the link text contains a number that could change — never use full linkText
+				
+				21. NEVER make assumptions about element visibility based on application state
+				    Do NOT generate test cases that assume:
+				    - "element is hidden when no data exists"
+				    - "dialog is closed by default"
+				    - "message disappears automatically"
+				    - "component is empty on first load"
+				    These assumptions are site-specific and may be wrong.
+				    Instead:
+				    - Only assert visibility of elements that page metadata confirms are present
+				    - For state-dependent behavior — only test the positive state you can trigger
+				    - If page metadata does not explicitly mention an element's default state
+				      do NOT assume what that state is
+				    - Negative visibility assertions require explicit setup steps to reach that state
+				    }
                 """;
     }
 

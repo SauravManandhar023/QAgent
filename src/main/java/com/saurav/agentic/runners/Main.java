@@ -2,11 +2,13 @@ package com.saurav.agentic.runners;
 
 import com.saurav.agentic.agents.Agent3_Compiler;
 import com.saurav.agentic.agents.Agent4_Reviewer;
+import com.saurav.agentic.agents.ApiDiscoveryAgent;
 import com.saurav.agentic.agents.ScriptGeneratorAgent;
 import com.saurav.agentic.agents.TestCaseGeneratorAgent;
 import com.saurav.agentic.config.FrameworkConfig;
 import com.saurav.agentic.config.ModelConfig;
 import com.saurav.agentic.constants.FrameworkConstants;
+import com.saurav.agentic.models.ApiEndpoint;
 import com.saurav.agentic.models.CompileResult;
 import com.saurav.agentic.scraper.PageMetadataExtractor;
 import com.saurav.agentic.models.PageMetadata;
@@ -20,6 +22,8 @@ public class Main {
     // Useful when testing Agent 2/3/4 changes without re-scraping
     // WARNING: Make sure Excel matches current URL before enabling
     private static final boolean SKIP_AGENT1 = false;
+ // ── API Toggle ────────────────────────────────── ──────────────────────
+    private static final boolean RUN_API_AGENTS = true; // set true to run API pipeline
 
     public static void main(String[] args) throws Exception {
 
@@ -30,6 +34,7 @@ public class Main {
         String url       = config.getBaseUrl();
         String excelPath = config.getUiExcelOutputPath();
         String pageAnalysis = "";
+        
 
         // Smart skip — only skip if manual flag set AND excel exists
         boolean shouldSkip = SKIP_AGENT1 && new File(excelPath).exists();
@@ -111,5 +116,22 @@ public class Main {
         System.out.println(FrameworkConstants.LOG_INFO +
                 " POM classes  : src/test/java/pages/");
         System.out.println(FrameworkConstants.LOG_SEPARATOR);
+        
+
+        // ── In main() after UI pipeline ───────────────────────────────────────
+        if (RUN_API_AGENTS) {
+            System.out.println("\n" + FrameworkConstants.LOG_SEPARATOR);
+            System.out.println(FrameworkConstants.LOG_INFO + " Starting Agent 5A — API Discovery...");
+            System.out.println(FrameworkConstants.LOG_SEPARATOR);
+
+            ApiDiscoveryAgent agent5a = new ApiDiscoveryAgent(
+                    config.getApiBaseUrl()
+            );
+            List<ApiEndpoint> endpoints = agent5a.discover();
+
+            System.out.println(FrameworkConstants.LOG_SUCCESS +
+                    " Agent 5A complete! Discovered: " +
+                    endpoints.size() + " endpoints");
+        }
     }
 }

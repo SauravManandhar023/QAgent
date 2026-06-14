@@ -124,6 +124,19 @@
 			<version>1.9.22</version>
 			<scope>test</scope>
 		</dependency>
+		
+		<!-- ALLURE REST ASSURED -->
+		<dependency>
+		    <groupId>io.qameta.allure</groupId>
+		    <artifactId>allure-rest-assured</artifactId>
+		    <version>${allure.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>io.qameta.allure</groupId>
+			<artifactId>allure-java-commons</artifactId>
+			<version>${allure.version}</version>
+		</dependency>
 
 	</dependencies>
 
