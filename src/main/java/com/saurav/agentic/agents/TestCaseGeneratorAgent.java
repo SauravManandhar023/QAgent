@@ -30,6 +30,9 @@ import java.util.Set;
  * 4. Parses AI response into TestCase objects
  * 5. Saves to Excel using ExcelUtil
  *
+ * P2.2 Fix: Ensures globally unique Test Case IDs by renumbering new batch
+ *            starting from maxExistingId + 1 to prevent ambiguity across runs.
+ *
  */
 public class TestCaseGeneratorAgent {
 
@@ -47,36 +50,95 @@ public class TestCaseGeneratorAgent {
     }
 
     /**
-     * Main entry point for Agent 1
+     * Main entry point for Agent 1 — full scrape + generate.
      * @param url - target URL to analyze and generate test cases for
      * @return list of generated TestCase objects
      */
     public List<TestCase> run(String url) throws Exception {
+        return run(url, null);
+    }
+
+    /**
+     * Main entry point for Agent 1 — reuses pre-scraped page analysis.
+     * Use this when PageMetadata has already been extracted (avoids redundant browser launch).
+     *
+     * @param url          - target URL
+     * @param pageAnalysis - pre-scraped page analysis (from PageMetadata.toPromptString())
+     * @return list of generated TestCase objects
+     */
+    public List<TestCase> run(String url, String pageAnalysis) throws Exception {
         System.out.println(FrameworkConstants.LOG_AGENT1_START);
         System.out.println(FrameworkConstants.LOG_SEPARATOR);
 
-        // Step 1: Scrape the page
-        System.out.println("[STEP 1] Scraping UI elements...");
-        String pageAnalysis = scraper.scrape(url);
-        this.lastPageAnalysis = pageAnalysis;
-        System.out.println(FrameworkConstants.LOG_SUCCESS + " Scraping complete!");
-        
+        // Step 1: Scrape the page (with retry logic) — or reuse pre-scraped analysis
+        boolean isPreScraped = (pageAnalysis != null && pageAnalysis.length() > 100);
+
+        if (!isPreScraped) {
+            System.out.println("[STEP 1] Scraping UI elements...");
+            int maxRetries = 3;
+            for (int attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    System.out.println("  Attempt " + attempt + " of " + maxRetries);
+                    pageAnalysis = scraper.scrape(url);
+                    this.lastPageAnalysis = pageAnalysis;
+
+                    if (pageAnalysis != null && pageAnalysis.length() > 100) {
+                        System.out.println(FrameworkConstants.LOG_SUCCESS + " Scraping complete!");
+                        System.out.println("Page analysis length: " + pageAnalysis.length() + " characters");
+                        break;
+                    } else {
+                        System.out.println(FrameworkConstants.LOG_WARNING + " Scraping returned minimal data, retrying...");
+                        if (attempt < maxRetries) {
+                            Thread.sleep(2000);
+                        }
+                    }
+                } catch (Exception e) {
+                    System.out.println(FrameworkConstants.LOG_WARNING + " Scraping attempt " + attempt + " failed: " + e.getMessage());
+                    if (attempt < maxRetries) {
+                        Thread.sleep(2000);
+                    } else {
+                        throw e;
+                    }
+                }
+            }
+
+            if (pageAnalysis == null || pageAnalysis.length() < 100) {
+                throw new Exception("Failed to get meaningful page analysis after " + maxRetries + " attempts");
+            }
+        } else {
+            this.lastPageAnalysis = pageAnalysis;
+            System.out.println(FrameworkConstants.LOG_INFO +
+                    " [STEP 1] Using pre-scraped page analysis (" +
+                    pageAnalysis.length() + " chars) — browser launch skipped.");
+        }
+
         // ── Step 1.5: Load existing test cases ───────────────────────────
         String excelPath = FrameworkConfig.getInstance().getUiExcelOutputPath();
         Set<String> existingNames = loadExistingTestCaseNames(excelPath);
+        Map<String, Integer> existingIds = loadExistingTestCaseIds(excelPath);
 
         boolean isFirstRun = existingNames.isEmpty();
 
         System.out.println(FrameworkConstants.LOG_INFO +
-                " Mode: " + (isFirstRun ? "Fresh generation" : 
+                " Mode: " + (isFirstRun ? "Fresh generation" :
                 "Incremental — " + existingNames.size() + " existing cases found"));
-        
 
-     // Step 2: Send to Groq AI
+        // ── P2.2: Determine starting ID for new test cases ──────────────
+        int maxExistingId = 0;
+        if (!existingIds.isEmpty()) {
+            maxExistingId = existingIds.values().stream()
+                    .mapToInt(Integer::intValue)
+                    .max()
+                    .orElse(0);
+            System.out.println(FrameworkConstants.LOG_INFO +
+                    " Highest existing Test Case ID: " + maxExistingId);
+        }
+
+        // ── Step 2: Send to Groq AI ─────────────────────────────────────
         System.out.println("\n[STEP 2] Sending to Groq AI...");
         String systemPrompt = PromptBuilder.uiTestCaseSystemPrompt();
         String userPrompt = PromptBuilder.uiTestCaseUserPrompt(pageAnalysis, existingNames);
-        String aiResponse = groqClient.chat(systemPrompt, userPrompt, 
+        String aiResponse = groqClient.chat(systemPrompt, userPrompt,
                 modelConfig.getAgent1Model(),
                 modelConfig.getAgent1Temperature(),
                 modelConfig.getAgent1MaxTokens()
@@ -88,7 +150,14 @@ public class TestCaseGeneratorAgent {
         List<TestCase> testCases = parseTestCases(aiResponse);
         System.out.println(FrameworkConstants.LOG_SUCCESS + " Parsed: " + testCases.size() + " test cases!");
 
-     // ── Step 4: Save to Excel (append mode) ──────────────────────────
+        // ── P2.2: Renumber new test cases to ensure globally unique IDs ─────
+        if (!isFirstRun && !testCases.isEmpty()) {
+            renumberTestCasesImpl(testCases, maxExistingId + 1);
+            System.out.println(FrameworkConstants.LOG_INFO +
+                    " Renumbered new test cases starting from ID: " + (maxExistingId + 1));
+        }
+
+        // ── Step 4: Save to Excel (append mode) ──────────────────────────
         System.out.println(FrameworkConstants.LOG_INFO + " [STEP 4] Saving to Excel...");
         ExcelUtil.appendTestCases(excelPath, testCases, isFirstRun);
 
@@ -100,7 +169,19 @@ public class TestCaseGeneratorAgent {
     }
 
     /**
-     * Parse Groq AI JSON response into TestCase list
+     * Renumbers test cases to ensure globally unique IDs across runs
+     * @param testCases list of test cases to renumber
+     * @param startingId the ID to start from for the first test case in this batch
+     */
+    private void renumberTestCases(List<TestCase> testCases, int startingId) {
+        for (int i = 0; i < testCases.size(); i++) {
+            String newId = "TC_" + String.format("%03d", startingId + i);
+            testCases.get(i).setTestCaseId(newId);
+        }
+    }
+
+    /**
+     * Parses Groq AI JSON response into TestCase list
      */
     private List<TestCase> parseTestCases(String aiResponse) {
         List<TestCase> testCases = new ArrayList<>();
@@ -117,7 +198,7 @@ public class TestCaseGeneratorAgent {
 
                 TestCase tc = new TestCase();
                 tc.setTestCaseId(getString(obj, "testCaseId",
-                        "TC_" + String.format("%03d", i + 1)));
+                        "TC_" + String.format("%03d", i + 1))); // Will be renumbered if needed
                 tc.setTestCaseName(getString(obj, "testCaseName", "Test Case " + (i + 1)));
                 tc.setDescription(getString(obj, "description", ""));
                 tc.setPreconditions(getString(obj, "preconditions", ""));
@@ -144,6 +225,52 @@ public class TestCaseGeneratorAgent {
         }
 
         return testCases;
+    }
+
+    /**
+     * Renumbers test cases to ensure globally unique IDs across runs
+     * @param testCases list of test cases to renumber
+     * @param startingId the ID to start from for the first test case in this batch
+     */
+    private void renumberTestCasesImpl(List<TestCase> testCases, int startingId) {
+        for (int i = 0; i < testCases.size(); i++) {
+            String newId = "TC_" + String.format("%03d", startingId + i);
+            testCases.get(i).setTestCaseId(newId);
+        }
+    }
+
+    /**
+     * Loads existing test case IDs from Excel to determine the maximum ID used
+     * @param excelPath path to the Excel file
+     * @return map of test case names to their numeric IDs
+     */
+    private Map<String, Integer> loadExistingTestCaseIds(String excelPath) {
+        Map<String, Integer> existingIds = new HashMap<>();
+        File file = new File(excelPath);
+        if (!file.exists()) return existingIds;
+
+        try {
+            List<TestCase> existingCases = ExcelUtil.readTestCases(excelPath);
+            for (TestCase tc : existingCases) {
+                String tcName = tc.getTestCaseName().toLowerCase().trim();
+                String tcId = tc.getTestCaseId();
+                // Extract numeric part from TC_XXX format
+                if (tcId != null && tcId.matches("TC_\\d{3}")) {
+                    try {
+                        int idNum = Integer.parseInt(tcId.substring(3));
+                        existingIds.put(tcName, idNum);
+                    } catch (NumberFormatException e) {
+                        // Ignore malformed IDs
+                    }
+                }
+            }
+            System.out.println(FrameworkConstants.LOG_INFO +
+                    " Loaded " + existingIds.size() + " existing test case IDs from Excel");
+        } catch (Exception e) {
+            System.out.println(FrameworkConstants.LOG_WARNING +
+                    " Could not read existing Excel IDs — starting fresh");
+        }
+        return existingIds;
     }
 
     /**
@@ -222,11 +349,11 @@ public class TestCaseGeneratorAgent {
         System.out.println("\nAutomation Feasible : " + automatable + "/" + testCases.size());
         System.out.println(FrameworkConstants.LOG_SEPARATOR);
     }
-    
+
     public String getLastPageAnalysis() {
         return lastPageAnalysis;
     }
-    
+
     //Read existing excel before generating new test cases
     private Set<String> loadExistingTestCaseNames(String excelPath) {
         Set<String> existing = new HashSet<>();
