@@ -1,0 +1,74 @@
+name: Mutation Testing
+
+on:
+  schedule:
+    # Run weekly: Sunday midnight UTC
+    - cron: "7 0 * * 0"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "PITest profile to run"
+        required: true
+        default: mutation-testing
+        type: choice
+        options:
+          - mutation-testing
+          - validate-generated-tests
+
+jobs:
+  pitest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+          cache: maven
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-m2
+
+      - name: Build project
+        run: mvn clean compile -q
+        timeout-minutes: 5
+
+      - name: Run PITest mutation testing
+        run: |
+          PROFILE="${{ github.event.inputs.profile || 'mutation-testing' }}"
+          echo "Running PITest with profile: $PROFILE"
+          mvn pitest:mutationCoverage -P "$PROFILE"
+        timeout-minutes: 40
+        continue-on-error: true
+
+      - name: Upload PITest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pitest-report
+          path: target/pit-reports/
+          retention-days: 30
+
+      - name: Check mutation score threshold
+        if: always()
+        run: |
+          REPORT=$(find target/pit-reports -name "index.html" 2>/dev/null | head -1)
+          if [ -n "$REPORT" ]; then
+            SCORE=$(grep -oP 'Coverage.*?\K[0-9]+(?=%)' "$REPORT" 2>/dev/null || echo "unknown")
+            echo "Mutation score: $SCORE%"
+            if [ "$SCORE" != "unknown" ] && [ "$SCORE" -lt 60 ]; then
+              echo "::warning::Mutation score $SCORE% is below 60% threshold"
+            fi
+          else
+            echo "No PITest report found — check build output"
+          fi

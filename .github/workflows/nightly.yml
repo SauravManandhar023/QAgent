@@ -1,0 +1,136 @@
+name: Nightly Full Pipeline
+
+on:
+  schedule:
+    # Run nightly at 3:07 AM UTC (off-peak hours)
+    - cron: "7 3 * * *"
+  workflow_dispatch:
+
+env:
+  LLM_PROVIDER: groq
+  BASE_URL: https://the-internet.herokuapp.com/login
+  PIPELINE_INTERACTIVE: "false"
+  PIPELINE_RUN_TESTS: "true"
+
+jobs:
+  full-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+          cache: maven
+
+      - name: Setup Chrome for Selenium
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-m2
+
+      - name: Build project
+        run: mvn clean compile -DskipTests -q
+        timeout-minutes: 5
+
+      - name: Generate classpath
+        run: mvn dependency:build-classpath -Dmdep.outputFile=target/classpath.txt -q
+        timeout-minutes: 2
+
+      - name: Run full QAgent pipeline
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          cat > config.local.properties << EOF
+          groq.api.key=${GROQ_API_KEY:-dummy_key_for_ollama}
+          base.url=$BASE_URL
+          pipeline.interactive=$PIPELINE_INTERACTIVE
+          pipeline.run.tests=$PIPELINE_RUN_TESTS
+          EOF
+          mvn exec:java -Dexec.mainClass="com.saurav.agentic.runners.Main"
+        timeout-minutes: 25
+
+      - name: Generate Allure report
+        if: always()
+        run: mvn allure:report -q
+        timeout-minutes: 3
+
+      - name: Run PITest mutation testing (framework)
+        if: always()
+        run: mvn pitest:mutationCoverage -P mutation-testing -q
+        timeout-minutes: 20
+        continue-on-error: true
+
+      - name: Upload Allure report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-allure-report
+          path: target/site/allure-maven-plugin/
+          retention-days: 14
+
+      - name: Upload PITest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-pitest-report
+          path: target/pit-reports/
+          retention-days: 14
+
+      - name: Upload generated tests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-generated-tests
+          path: |
+            src/test/java/pages/
+            src/test/java/generated/ui/
+          retention-days: 7
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-test-results
+          path: |
+            test-output/
+            target/surefire-reports/
+          retention-days: 30
+
+      - name: Summarize nightly run
+        if: always()
+        run: |
+          echo "## Nightly Pipeline Results" >> $GITHUB_STEP_SUMMARY
+
+          # Test results
+          if [ -d "target/surefire-reports" ]; then
+            TESTS=$(grep -r 'Tests run:' target/surefire-reports/*.txt 2>/dev/null | tail -1)
+            echo "**Tests**: $TESTS" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Mutation score
+          if [ -d "target/pit-reports" ]; then
+            SCORE=$(grep -r 'Coverage' target/pit-reports/*/index.html 2>/dev/null | head -1 | grep -oP '[0-9]+%' || echo "N/A")
+            echo "**Mutation Score**: $SCORE" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Generated files count
+          POM_COUNT=$(find src/test/java/pages -name "*.java" 2>/dev/null | wc -l)
+          TEST_COUNT=$(find src/test/java/generated/ui -name "*.java" 2>/dev/null | wc -l)
+          echo "**POM classes**: $POM_COUNT" >> $GITHUB_STEP_SUMMARY
+          echo "**Test classes**: $TEST_COUNT" >> $GITHUB_STEP_SUMMARY
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "_Run completed at $(date -u)_" >> $GITHUB_STEP_SUMMARY
