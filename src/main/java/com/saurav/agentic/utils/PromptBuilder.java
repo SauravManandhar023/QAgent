@@ -17,31 +17,24 @@ public class PromptBuilder {
 
     public static String uiTestCaseSystemPrompt() {
         return """
-                You are a senior QA engineer with 10+ years of experience in web application testing.
-                Your job is to analyze web page UI elements and generate comprehensive test cases.
+                You are an experienced QA engineer.
+                Analyze UI elements and generate test cases as JSON array.
 
-                For each UI component found, generate test cases covering:
-                - Positive cases: valid inputs and happy path flows
-                - Negative cases: invalid inputs, boundary values, wrong data types
-                - Edge cases: empty fields, special characters, max/min length, SQL injection attempts
-                - Accessibility cases: keyboard navigation, missing alt text, form labels
+                Generate: Positive, Negative, Edge, Accessibility test cases.
 
-                STRICT RULES:
-                1. Respond ONLY with a valid JSON array
-                2. No explanation before or after the JSON
-                3. No markdown code blocks or backticks
-                4. Every field must be present in every test case
-                5. automationFeasible must be true or false (boolean)
-                6. testType must be exactly one of: Positive, Negative, Edge, Accessibility
-                7. priority must be exactly one of: High, Medium, Low
-                8. testData must contain specific values used in the test
-                   For positive cases: use valid data (e.g. "username: tomsmith, password: SuperSecretPassword!")
-                   For negative cases: use invalid data (e.g. "username: invalid, password: wrong")
-                   For edge cases: use boundary values (e.g. "username: '', password: ''")
-                   NEVER leave testData empty
-                9. testSteps must be detailed and executable by an automation engineer
-                10. Do NOT generate test cases for behavior that is impossible without state persistence
-        		e.g. "checkbox state retained after page reload" — browsers reset form elements on reload
+                RULES:
+                1. ONLY valid JSON array, no extra text (JSON only)
+                2. Every field required in each test case
+                3. automationFeasible: true/false boolean
+                4. testType: Positive/Negative/Edge/Accessibility
+                5. priority: High/Medium/Low
+                6. testData: specific values (never empty)
+                   - Positive: valid data (e.g. "username: admin, password: 12345")
+                   - Negative: invalid data (e.g. "username: bad, password: wrong")
+                   - Edge: boundary values (e.g. "username: '', password: ''")
+                7. testSteps: detailed, executable steps
+                8. NO impossible behavior without state persistence
+                   (e.g. "checkbox state after reload")
 
                 JSON structure for each test case:
                 {
@@ -57,8 +50,8 @@ public class PromptBuilder {
                     "component": "Login Form",
                     "automationFeasible": true
                 }
-                11. For dropdown test cases — testData must use EXACT option text from the page analysis
-        		CORRECT: "Option 1", "Option 2", "Please select an option"
+                9. Dropdown testData: EXACT option text from analysis
+                   - CORRECT: "Option 1", "Option 2", "Please select an option"
         		WRONG: "1", "2", "option1", any XSS or SQL injection string
         		Dropdown security tests should assert rejection of invalid input at application level,
         		NOT attempt to select injection strings as dropdown options
@@ -173,22 +166,30 @@ public class PromptBuilder {
                 """;
     }
 
-		    public static String uiTestCaseUserPrompt(String pageAnalysis, 
+		    public static String uiTestCaseUserPrompt(String pageAnalysis,
 		            Set<String> existingTestNames) {
 		StringBuilder sb = new StringBuilder();
 		sb.append("Page Analysis:\n").append(pageAnalysis).append("\n\n");
-		
+
 		if (existingTestNames != null && !existingTestNames.isEmpty()) {
 		sb.append("ALREADY COVERED TEST CASES (do NOT regenerate these):\n");
+		int count = 0;
 		for (String name : existingTestNames) {
-		sb.append("- ").append(name).append("\n");
+		    if (count >= 10) {
+		        break;
+		    }
+		    sb.append("- ").append(name).append("\n");
+		    count++;
+		}
+		if (existingTestNames.size() > 10) {
+		    sb.append("... and ").append(existingTestNames.size() - 10).append(" more\n");
 		}
 		sb.append("\nGenerate 15 NEW test cases that are NOT in the list above.\n");
 		sb.append("Focus on areas and scenarios not yet covered.\n\n");
 		} else {
 		sb.append("Generate 15 test cases for this page.\n\n");
 		}
-		
+
 		return sb.toString();
 		}
 

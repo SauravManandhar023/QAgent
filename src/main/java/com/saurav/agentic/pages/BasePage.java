@@ -16,7 +16,7 @@ public class BasePage {
     protected JavascriptExecutor js;
 
     private static final int DEFAULT_WAIT    = 10;
-    private static final int JS_SCROLL_DELAY = 300; // ms after JS scroll
+    private static final int JS_SCROLL_DELAY = 100; // ms after JS scroll
 
     public BasePage(WebDriver driver) {
         this.driver = driver;
@@ -200,15 +200,15 @@ public class BasePage {
      */
     protected void dismissAdOverlay() {
         try {
-            // Wait briefly for potential ad overlay
-            Thread.sleep(1500);
+            // Wait briefly for potential ad overlay - reduced for faster execution
+            Thread.sleep(500);
             String currentUrl = driver.getCurrentUrl();
             if (currentUrl.contains("google_vignette") || 
                 currentUrl.contains("#")) {
                 // Navigate back to clean URL
                 String cleanUrl = currentUrl.split("#")[0];
                 driver.get(cleanUrl);
-                Thread.sleep(1000);
+                Thread.sleep(200); // reduced for faster execution
             }
             // Try to remove overlay via JS
             js.executeScript(

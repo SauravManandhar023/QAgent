@@ -61,15 +61,8 @@ public final class FrameworkConstants {
     public static final String PRIORITY_MEDIUM = "Medium";
     public static final String PRIORITY_LOW = "Low";
 
-    // ===== PROMPT FILE PATHS =====
-    public static final String PROMPT_UI_TESTCASE = "src/main/resources/prompts/ui-testcase-prompt.txt";
-    public static final String PROMPT_SELENIUM_SCRIPT = "src/main/resources/prompts/selenium-script-prompt.txt";
-    public static final String PROMPT_API_TESTCASE = "src/main/resources/prompts/api-testcase-prompt.txt";
-    public static final String PROMPT_API_SCRIPT = "src/main/resources/prompts/api-script-prompt.txt";
-
-    // ===== TEMPLATE FILE PATHS =====
-    public static final String TEMPLATE_PAGE = "src/main/resources/templates/page-template.txt";
-    public static final String TEMPLATE_TEST = "src/main/resources/templates/test-template.txt";
+    // ===== GENERATED FILE PATHS =====
+    public static final String GENERATED_CLASSPATH_FILE = "target/classpath.txt";
 
     // ===== TESTNG XML =====
     public static final String TESTNG_XML = "testng.xml";

@@ -87,8 +87,8 @@ public class ApiDiscoveryAgent {
             System.out.println(FrameworkConstants.LOG_SUCCESS +
                     " " + endpoint);
 
-            // Brief pause between requests
-            sleep(500);
+            // Brief pause between requests - set to 0 for faster execution (use with caution)
+            sleep(0);
         }
 
         printSummary(discovered);

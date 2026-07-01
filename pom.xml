@@ -154,6 +154,27 @@
 				</configuration>
 			</plugin>
 
+			<!-- Maven Dependency: generate classpath for JavaCompilerUtil -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-dependency-plugin</artifactId>
+				<version>3.7.1</version>
+				<executions>
+					<execution>
+						<id>build-classpath</id>
+						<phase>process-classes</phase>
+						<goals>
+							<goal>build-classpath</goal>
+						</goals>
+						<configuration>
+							<outputFile>target/classpath.txt</outputFile>
+							<includeScope>compile</includeScope>
+							<includeScope>test</includeScope>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+
 			<!-- Maven Surefire (TestNG runner) -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
@@ -181,5 +202,90 @@
 
 		</plugins>
 	</build>
+
+	<profiles>
+		<!-- PITest Mutation Testing Profile
+			 Run with: mvn pitest:mutationCoverage -P mutation-testing
+			 Validates test quality by injecting faults and seeing if tests catch them.
+			 Currently configured to validate framework unit tests.
+			 For generated test validation, point targetClasses at a stub application model. -->
+		<profile>
+			<id>mutation-testing</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.pitest</groupId>
+						<artifactId>pitest-maven</artifactId>
+						<version>1.17.1</version>
+						<dependencies>
+							<dependency>
+								<groupId>org.pitest</groupId>
+								<artifactId>pitest-testng</artifactId>
+								<version>1.2.0</version>
+							</dependency>
+						</dependencies>
+						<configuration>
+							<!-- Target production classes to mutate -->
+							<targetClasses>
+								<param>com.saurav.agentic.utils.*</param>
+								<param>com.saurav.agentic.models.*</param>
+								<param>com.saurav.agentic.config.*</param>
+								<param>com.saurav.agentic.prompts.*</param>
+							</targetClasses>
+							<!-- Test classes to run against mutations -->
+							<targetTests>
+								<param>com.saurav.agentic.*Test</param>
+							</targetTests>
+							<pluginConfiguration>
+								<outputFormats>
+									<outputFormat>HTML</outputFormat>
+									<outputFormat>XML</outputFormat>
+								</outputFormats>
+								<mutationThreshold>60</mutationThreshold>
+							</pluginConfiguration>
+							<verbose>true</verbose>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+		<!-- Profile for validating GENERATED test quality
+			 Run with: mvn pitest:mutationCoverage -P validate-generated-tests
+			 Targets the generated test suite against a known application model.
+			 NOTE: Requires generated tests in src/test/java/generated/ui/ first. -->
+		<profile>
+			<id>validate-generated-tests</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.pitest</groupId>
+						<artifactId>pitest-maven</artifactId>
+						<version>1.17.1</version>
+						<dependencies>
+							<dependency>
+								<groupId>org.pitest</groupId>
+								<artifactId>pitest-testng</artifactId>
+								<version>1.2.0</version>
+							</dependency>
+						</dependencies>
+						<configuration>
+							<targetClasses>
+								<param>com.saurav.testapp.*</param>
+							</targetClasses>
+							<targetTests>
+								<param>generated.ui.*</param>
+							</targetTests>
+							<pluginConfiguration>
+								<outputFormats>
+									<outputFormat>HTML</outputFormat>
+									<outputFormat>XML</outputFormat>
+								</outputFormats>
+							</pluginConfiguration>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
 
 </project>

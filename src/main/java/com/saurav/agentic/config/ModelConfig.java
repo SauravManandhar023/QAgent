@@ -138,7 +138,10 @@ public class ModelConfig {
         System.out.println("  Agent 1 : " + getAgent1Model() +
                 " (temp=" + getAgent1Temperature() +
                 ", tokens=" + getAgent1MaxTokens() + ")");
-        System.out.println("  Agent 2 : " + getAgent2Model() +
+        System.out.println("  Agent 2 POM : " + getAgent2PomModel() +
+                " (temp=" + getAgent2Temperature() +
+                ", tokens=" + getAgent2MaxTokens() + ")");
+        System.out.println("  Agent 2 Test: " + getAgent2TestModel() +
                 " (temp=" + getAgent2Temperature() +
                 ", tokens=" + getAgent2MaxTokens() + ")");
         System.out.println("  Agent 3 : " + getAgent3Model() +

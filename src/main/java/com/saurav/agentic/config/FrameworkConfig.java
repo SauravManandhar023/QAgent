@@ -38,10 +38,18 @@ public class FrameworkConfig {
     // ===== GROQ AI =====
 
     public String getGroqApiKey() {
+        // If using Ollama, we don't need a Groq API key
+        if ("ollama".equalsIgnoreCase(getLlmProvider())) {
+            return ""; // Return empty string - won't be used for Ollama requests
+        }
         return reader.getGroqApiKey();
     }
 
     public String getGroqModel() {
+        // Return appropriate model based on provider
+        if ("ollama".equalsIgnoreCase(getLlmProvider())) {
+            return reader.get("ollama.model", "llama3"); // Default Ollama model
+        }
         return reader.get("groq.model", FrameworkConstants.GROQ_DEFAULT_MODEL);
     }
 
@@ -51,6 +59,40 @@ public class FrameworkConfig {
 
     public double getGroqTemperature() {
         return Double.parseDouble(reader.get("groq.temperature", "0.3"));
+    }
+
+    // ===== LLM PROVIDER CONFIGURATION =====
+
+    /**
+     * Get LLM provider: "groq" or "ollama"
+     * Defaults to "groq" for backward compatibility
+     */
+    public String getLlmProvider() {
+        return reader.get("llm.provider", "groq");
+    }
+
+    /**
+     * Get Ollama base URL
+     * Defaults to local Ollama instance
+     */
+    public String getOllamaBaseUrl() {
+        return reader.get("ollama.base.url", "http://localhost:11434");
+    }
+
+    /**
+     * Get FCC Admin base URL.
+     * Defaults to http://localhost:8082
+     */
+    public String getFccBaseUrl() {
+        return reader.get("fcc.base.url", "http://localhost:8082");
+    }
+
+    /**
+     * Get FCC Admin API key.
+     * Defaults to "freecc"
+     */
+    public String getFccApiKey() {
+        return reader.get("fcc.api.key", "freecc");
     }
 
     // ===== BASE URL =====
@@ -111,17 +153,48 @@ public class FrameworkConfig {
 
     // ===== PRINT CONFIG (for debugging) =====
 
+    // ===== PIPELINE MODE =====
+
+    /**
+     * Whether the pipeline should pause for human validation between Agent 1 and Agent 2.
+     * Set pipeline.interactive=false in config.properties for CI/CD mode.
+     * Defaults to true for local development.
+     */
+    /**
+     * Direct access to ConfigReader for ad-hoc properties not covered by typed getters.
+     */
+    public ConfigReader getConfigReader() {
+        return reader;
+    }
+
+    public boolean isInteractive() {
+        return reader.getBoolean("pipeline.interactive", true);
+    }
+
+    // ===== PRINT CONFIG (for debugging) =====
+
     public void printConfig() {
         System.out.println("\n📋 FRAMEWORK CONFIGURATION:");
         System.out.println(FrameworkConstants.LOG_SEPARATOR);
         System.out.println("  Browser      : " + getBrowser());
         System.out.println("  Headless     : " + isHeadless());
         System.out.println("  Base URL     : " + getBaseUrl());
-        System.out.println("  Groq Model   : " + getGroqModel());
-        System.out.println("  Groq Tokens  : " + getGroqMaxTokens());
+        System.out.println("  LLM Provider : " + getLlmProvider());
+        String provider = getLlmProvider();
+        if ("ollama".equalsIgnoreCase(provider)) {
+            System.out.println("  Ollama URL   : " + getOllamaBaseUrl());
+            System.out.println("  Ollama Model : " + getGroqModel());
+        } else if ("fcc".equalsIgnoreCase(provider)) {
+            System.out.println("  FCC Admin URL: " + getFccBaseUrl());
+            System.out.println("  FCC API Key  : " + (getFccApiKey().isEmpty() ? "(none)" : "****"));
+        } else {
+            System.out.println("  Groq Model   : " + getGroqModel());
+            System.out.println("  Groq Tokens  : " + getGroqMaxTokens());
+        }
         System.out.println("  UI Excel     : " + getUiExcelOutputPath());
         System.out.println("  UI Scripts   : " + getUiScriptsOutputPath());
         System.out.println("  Explicit Wait: " + getExplicitWait() + "s");
+        System.out.println("  Interactive  : " + isInteractive());
         System.out.println(FrameworkConstants.LOG_SEPARATOR + "\n");
     }
     

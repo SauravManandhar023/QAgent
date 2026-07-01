@@ -85,6 +85,15 @@ public class ConfigReader {
     }
 
     /**
+     * Get a boolean property with a default fallback
+     */
+    public boolean getBoolean(String key, boolean defaultValue) {
+        String val = properties.getProperty(key);
+        if (val == null) return defaultValue;
+        return Boolean.parseBoolean(val.trim());
+    }
+
+    /**
      * Get an integer property
      */
     public int getInt(String key) {

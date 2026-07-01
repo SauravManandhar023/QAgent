@@ -46,7 +46,7 @@ public class PageMetadataExtractor {
 
         try {
             driver.get(url);
-            Thread.sleep(2000); // wait for page to settle
+            Thread.sleep(1000); // wait for page to settle - reduced for faster execution
 
             metadata.setUrl(url);
             metadata.setPageTitle(driver.getTitle());

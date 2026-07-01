@@ -15,6 +15,7 @@
             <class name="com.saurav.agentic.utils.ExcelUtilTest"/>
             <class name="com.saurav.agentic.utils.PromptBuilderTest"/>
             <class name="com.saurav.agentic.constants.FrameworkConstantsTest"/>
+            <class name="com.saurav.agentic.utils.LlmCacheTest"/>
         </classes>
     </test>
 

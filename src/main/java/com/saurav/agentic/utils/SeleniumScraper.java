@@ -161,8 +161,8 @@ public class SeleniumScraper {
         analysis.append("=== LINKS (").append(links.size()).append(") ===\n");
         int count = 0;
         for (Element link : links) {
-            if (count >= 20) {
-                analysis.append("  ... and ").append(links.size() - 20).append(" more\n");
+            if (count >= 10) {
+                analysis.append("  ... and ").append(links.size() - 10).append(" more\n");
                 break;
             }
             analysis.append("  - text='").append(link.text().trim())
@@ -337,6 +337,12 @@ public class SeleniumScraper {
         options.addArguments("--disable-dev-shm-usage");
         options.addArguments("--window-size=1920,1080");
         options.addArguments("--disable-gpu");
+        options.addArguments("--disable-extensions");
+        options.addArguments("--disable-plugins");
+        options.addArguments("--disable-images");
+        options.addArguments("--disable-background-timer-throttling");
+        options.addArguments("--disable-backgrounding-occluded-windows");
+        options.addArguments("--disable-renderer-backgrounding");
 
         return new ChromeDriver(options);
     }

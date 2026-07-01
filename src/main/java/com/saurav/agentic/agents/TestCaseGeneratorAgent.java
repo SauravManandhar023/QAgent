@@ -7,7 +7,7 @@ import com.saurav.agentic.config.FrameworkConfig;
 import com.saurav.agentic.constants.FrameworkConstants;
 import com.saurav.agentic.models.TestCase;
 import com.saurav.agentic.utils.ExcelUtil;
-import com.saurav.agentic.utils.GroqClient;
+import com.saurav.agentic.llm.LLMService;
 import com.saurav.agentic.utils.PromptBuilder;
 import com.saurav.agentic.utils.SeleniumScraper;
 import com.saurav.agentic.config.ModelConfig;
@@ -39,14 +39,14 @@ public class TestCaseGeneratorAgent {
     private final FrameworkConfig config;
     private final SeleniumScraper scraper;
     private final ModelConfig modelConfig;
-    private final GroqClient groqClient;
+    private final LLMService llmService;
     private String lastPageAnalysis = "";
 
     public TestCaseGeneratorAgent() {
         this.config = FrameworkConfig.getInstance();
         this.scraper = new SeleniumScraper();
         this.modelConfig = ModelConfig.getInstance();
-        this.groqClient = new GroqClient();
+        this.llmService = new LLMService();
     }
 
     /**
@@ -134,20 +134,70 @@ public class TestCaseGeneratorAgent {
                     " Highest existing Test Case ID: " + maxExistingId);
         }
 
-        // ── Step 2: Send to Groq AI ─────────────────────────────────────
-        System.out.println("\n[STEP 2] Sending to Groq AI...");
+        // ── Step 2: Send to Groq AI via function-calling ──────────────────
+        System.out.println("\n[STEP 2] Sending to Groq AI (function-calling)...");
         String systemPrompt = PromptBuilder.uiTestCaseSystemPrompt();
         String userPrompt = PromptBuilder.uiTestCaseUserPrompt(pageAnalysis, existingNames);
-        String aiResponse = groqClient.chat(systemPrompt, userPrompt,
+
+        // Define the JSON Schema for the expected output
+        Map<String, Object> testCaseProperties = new HashMap<>();
+        testCaseProperties.put("testCaseId", LLMService.stringProperty("Unique test case identifier, e.g. TC_001"));
+        testCaseProperties.put("testCaseName", LLMService.stringProperty("Descriptive test case name"));
+        testCaseProperties.put("description", LLMService.stringProperty("Detailed description of the test"));
+        testCaseProperties.put("preconditions", LLMService.stringProperty("Preconditions needed before test execution"));
+        testCaseProperties.put("testSteps", LLMService.stringProperty("Step-by-step test steps"));
+        testCaseProperties.put("testData", LLMService.stringProperty("Test data values used"));
+        testCaseProperties.put("expectedResult", LLMService.stringProperty("Expected outcome of the test"));
+        testCaseProperties.put("testType", LLMService.stringProperty("Positive, Negative, Edge, or Accessibility"));
+        testCaseProperties.put("priority", LLMService.stringProperty("High, Medium, or Low"));
+        testCaseProperties.put("component", LLMService.stringProperty("UI component this test targets"));
+        testCaseProperties.put("automationFeasible", LLMService.booleanProperty("Whether this test can be automated with Selenium"));
+
+        List<String> requiredFields = List.of(
+                "testCaseId", "testCaseName", "description", "preconditions",
+                "testSteps", "testData", "expectedResult", "testType",
+                "priority", "component", "automationFeasible"
+        );
+
+        Map<String, Object> schema = LLMService.jsonSchema(
+                Map.of("testCases", LLMService.arrayProperty(testCaseProperties, requiredFields,
+                        "Array of test cases for this page component")),
+                List.of("testCases")
+        );
+
+        JsonObject responseJson = llmService.chatWithTools(
+                "generate_test_cases",
+                "Generate UI test cases based on page analysis",
+                schema,
+                systemPrompt, userPrompt,
                 modelConfig.getAgent1Model(),
                 modelConfig.getAgent1Temperature(),
                 modelConfig.getAgent1MaxTokens()
         );
+
         System.out.println(FrameworkConstants.LOG_SUCCESS + " AI response received!");
 
-        // Step 3: Parse response
+        // Step 3: Parse response from structured tool call
         System.out.println("\n[STEP 3] Parsing test cases...");
-        List<TestCase> testCases = parseTestCases(aiResponse);
+        List<TestCase> testCases = parseTestCasesFromJson(responseJson);
+
+        // Fallback: if tool call returned no testCases but has raw content (model
+        // doesn't support structured JSON output), try parsing as markdown test cases.
+        if (testCases.isEmpty() && responseJson.has("code") && !responseJson.get("code").isJsonNull()) {
+            String rawContent = responseJson.get("code").getAsString();
+            System.out.println(FrameworkConstants.LOG_WARNING +
+                    " No structured testCases found — trying fallback: markdown parsing (" +
+                    rawContent.length() + " chars).");
+
+            // Attempt 1: Try old JSON-in-markdown parsing (handles ```json fences)
+            testCases = parseTestCases(rawContent);
+
+            // Attempt 2: If still empty, try structured markdown parser
+            if (testCases.isEmpty()) {
+                testCases = parseMarkdownTestCases(rawContent);
+            }
+        }
+
         System.out.println(FrameworkConstants.LOG_SUCCESS + " Parsed: " + testCases.size() + " test cases!");
 
         // ── P2.2: Renumber new test cases to ensure globally unique IDs ─────
@@ -181,8 +231,59 @@ public class TestCaseGeneratorAgent {
     }
 
     /**
-     * Parses Groq AI JSON response into TestCase list
+     * Parses structured JsonObject (from tool-calling API) into TestCase list.
+     * No markdown/backtick stripping needed — the response is already typed JSON.
      */
+    private List<TestCase> parseTestCasesFromJson(JsonObject responseJson) {
+        List<TestCase> testCases = new ArrayList<>();
+        Gson gson = new Gson();
+
+        try {
+            JsonArray jsonArray = responseJson.getAsJsonArray("testCases");
+            if (jsonArray == null) {
+                System.err.println(FrameworkConstants.LOG_ERROR +
+                        " Tool response missing 'testCases' array: " + responseJson);
+                return testCases;
+            }
+
+            for (int i = 0; i < jsonArray.size(); i++) {
+                JsonObject obj = jsonArray.get(i).getAsJsonObject();
+
+                TestCase tc = new TestCase();
+                tc.setTestCaseId(getString(obj, "testCaseId",
+                        "TC_" + String.format("%03d", i + 1)));
+                tc.setTestCaseName(getString(obj, "testCaseName", "Test Case " + (i + 1)));
+                tc.setDescription(getString(obj, "description", ""));
+                tc.setPreconditions(getString(obj, "preconditions", ""));
+                tc.setTestSteps(getString(obj, "testSteps", ""));
+                tc.setTestData(getString(obj, "testData", ""));
+                tc.setExpectedResult(getString(obj, "expectedResult", ""));
+                tc.setTestType(getString(obj, "testType", FrameworkConstants.TEST_TYPE_POSITIVE));
+                tc.setPriority(getString(obj, "priority", FrameworkConstants.PRIORITY_MEDIUM));
+                tc.setComponent(getString(obj, "component", "General"));
+                tc.setAutomationFeasible(
+                        obj.has("automationFeasible") &&
+                        !obj.get("automationFeasible").isJsonNull() &&
+                        obj.get("automationFeasible").getAsBoolean()
+                );
+
+                testCases.add(tc);
+            }
+
+        } catch (Exception e) {
+            System.err.println(FrameworkConstants.LOG_ERROR +
+                    " Failed to parse tool-call response: " + e.getMessage());
+            System.err.println("Response: " + responseJson);
+        }
+
+        return testCases;
+    }
+
+    /**
+     * @deprecated Replaced by parseTestCasesFromJson with tool-calling API.
+     * Kept for backward compatibility with cached responses from free-text API.
+     */
+    @Deprecated
     private List<TestCase> parseTestCases(String aiResponse) {
         List<TestCase> testCases = new ArrayList<>();
         Gson gson = new Gson();
@@ -224,6 +325,157 @@ public class TestCaseGeneratorAgent {
                     aiResponse.substring(0, Math.min(500, aiResponse.length())));
         }
 
+        return testCases;
+    }
+
+    /**
+     * Parses markdown-formatted test cases (produced by models like qwen2.5-coder:7b
+     * that don't support structured JSON output).
+     *
+     * Expected format:
+     * ### Test Case N:
+     * **Test Title**
+     * - **Description**: ...
+     * - **Preconditions**:
+     *   - bullet...
+     * - **Steps**:
+     *   1. step one
+     *   2. step two
+     * - **Expected Outcome**: ...
+     */
+    private List<TestCase> parseMarkdownTestCases(String markdown) {
+        List<TestCase> testCases = new ArrayList<>();
+        if (markdown == null || markdown.trim().isEmpty()) return testCases;
+
+        try {
+            // Split by "### Test Case" to get individual test case blocks
+            String[] blocks = markdown.split("(?=###\\s+Test\\s+Case\\s+\\d+)");
+            int count = 0;
+            for (String block : blocks) {
+                block = block.trim();
+                if (block.isEmpty() || !block.startsWith("### Test Case")) continue;
+
+                count++;
+                TestCase tc = new TestCase();
+                tc.setTestCaseId("TC_" + String.format("%03d", count));
+                tc.setPriority(FrameworkConstants.PRIORITY_MEDIUM);
+                tc.setTestType(FrameworkConstants.TEST_TYPE_POSITIVE);
+                tc.setComponent("Home Page");
+                tc.setAutomationFeasible(true);
+
+                String[] lines = block.split("\\n");
+                StringBuilder titleBuilder = new StringBuilder();
+                StringBuilder descriptionBuilder = new StringBuilder();
+                StringBuilder preconditionsBuilder = new StringBuilder();
+                StringBuilder stepsBuilder = new StringBuilder();
+                StringBuilder expectedBuilder = new StringBuilder();
+                String currentSection = "";
+
+                for (String line : lines) {
+                    String trimmed = line.trim();
+                    if (trimmed.startsWith("### Test Case")) continue;
+
+                    // Standalone bold text on its own line = title
+                    if (trimmed.matches("\\*\\*[^*]+\\*\\*") && titleBuilder.length() == 0) {
+                        titleBuilder.append(trimmed.replaceAll("\\*\\*", ""));
+                        continue;
+                    }
+
+                    if (trimmed.contains("**Description**")) {
+                        currentSection = "description";
+                        String d = trimmed.replaceAll("- \\*\\*Description\\*?\\*?:?", "").trim();
+                        if (!d.isEmpty()) descriptionBuilder.append(d).append(" ");
+                        continue;
+                    }
+                    if (trimmed.contains("**Preconditions**")) {
+                        currentSection = "preconditions";
+                        String p = trimmed.replaceAll("- \\*\\*Preconditions\\*?\\*?:?", "").trim();
+                        if (!p.isEmpty()) preconditionsBuilder.append(p).append(" ");
+                        continue;
+                    }
+                    if (trimmed.contains("**Steps**")) {
+                        currentSection = "steps";
+                        continue;
+                    }
+                    if (trimmed.contains("**Expected Outcome**") || trimmed.contains("**Expected Result**")) {
+                        currentSection = "expected";
+                        String e = trimmed.replaceAll("- \\*\\*Expected (Outcome|Result)\\*?\\*?:?", "").trim();
+                        if (!e.isEmpty()) expectedBuilder.append(e).append(" ");
+                        continue;
+                    }
+                    if (trimmed.contains("**Objective**")) {
+                        currentSection = "description";
+                        String o = trimmed.replaceAll("- \\*\\*Objective\\*?\\*?:?", "").trim();
+                        if (!o.isEmpty()) descriptionBuilder.append(o).append(" ");
+                        continue;
+                    }
+
+                    if (!currentSection.isEmpty() && !trimmed.isEmpty()) {
+                        String cleaned = trimmed.replaceAll("^[-•*]\\s*", "")
+                                                .replaceAll("^\\d+\\.\\s*", "")
+                                                .trim();
+                        if (!cleaned.isEmpty()) {
+                            switch (currentSection) {
+                                case "description":
+                                    descriptionBuilder.append(cleaned).append(" ");
+                                    break;
+                                case "preconditions":
+                                    preconditionsBuilder.append(cleaned).append("\\n");
+                                    break;
+                                case "steps":
+                                    stepsBuilder.append(cleaned);
+                                    if (!cleaned.endsWith(".")) stepsBuilder.append(".");
+                                    stepsBuilder.append("\\n");
+                                    break;
+                                case "expected":
+                                    expectedBuilder.append(cleaned).append(" ");
+                                    break;
+                            }
+                        }
+                    }
+                }
+
+                String title = titleBuilder.toString().trim();
+                if (title.isEmpty()) {
+                    title = descriptionBuilder.toString().trim();
+                    if (title.length() > 60) title = title.substring(0, 57) + "...";
+                }
+                tc.setTestCaseName(title.isEmpty() ? "Test Case " + count : title);
+                tc.setDescription(descriptionBuilder.toString().trim());
+                tc.setPreconditions(preconditionsBuilder.toString().trim());
+                tc.setTestSteps(stepsBuilder.toString().trim());
+                tc.setExpectedResult(expectedBuilder.toString().trim());
+                tc.setTestData("Values based on: " + title);
+
+                // Determine test type based on content
+                String allText = (title + " " + descriptionBuilder).toString().toLowerCase();
+                if (allText.contains("invalid") || allText.contains("error") || allText.contains("fail") ||
+                    allText.contains("wrong") || allText.contains("incorrect") || allText.contains("negative")) {
+                    tc.setTestType(FrameworkConstants.TEST_TYPE_NEGATIVE);
+                } else if (allText.contains("edge") || allText.contains("boundary") || allText.contains("empty") ||
+                           allText.contains("limit") || allText.contains("maximum")) {
+                    tc.setTestType("Edge");
+                } else if (allText.contains("accessib") || allText.contains("aria") || allText.contains("keyboard") ||
+                           allText.contains("screen reader") || allText.contains("contrast")) {
+                    tc.setTestType("Accessibility");
+                }
+
+                // Determine automation feasibility
+                if (stepsBuilder.toString().toLowerCase().contains("keyboard") ||
+                    stepsBuilder.toString().toLowerCase().contains("screen reader") ||
+                    stepsBuilder.toString().toLowerCase().contains("resize") ||
+                    stepsBuilder.toString().toLowerCase().contains("responsive")) {
+                    tc.setAutomationFeasible(false);
+                }
+
+                testCases.add(tc);
+            }
+            System.out.println(FrameworkConstants.LOG_INFO +
+                    " Markdown parser extracted " + testCases.size() + " test cases.");
+        } catch (Exception e) {
+            System.err.println(FrameworkConstants.LOG_WARNING +
+                    " Markdown parsing failed: " + e.getMessage());
+        }
         return testCases;
     }
 

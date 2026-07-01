@@ -12,8 +12,9 @@ import java.util.regex.Pattern;
 import com.saurav.agentic.compiler.JavaCompilerUtil;
 import com.saurav.agentic.config.ModelConfig;
 import com.saurav.agentic.constants.FrameworkConstants;
+import com.saurav.agentic.llm.LLMService;
 import com.saurav.agentic.models.CompileResult;
-import com.saurav.agentic.utils.GroqClient;
+import com.google.gson.JsonObject;
 
 /**
  * Agent4_Reviewer - Smart Code Fix Agent
@@ -27,10 +28,10 @@ import com.saurav.agentic.utils.GroqClient;
  */
 public class Agent4_Reviewer {
 
-    private final GroqClient groqClient;
+    private final LLMService llmService;
     private final ModelConfig modelConfig;
 
-    private static final int MAX_FIX_ATTEMPTS  = 2;
+    private static final int MAX_FIX_ATTEMPTS  = 1;
     private static final int CONTEXT_LINES     = 8; // lines around error to send LLM
 
     // ── Fix Knowledge Base ────────────────────────────────────────────────────
@@ -44,10 +45,17 @@ public class Agent4_Reviewer {
         KNOWN_FIXES.put("import org.openqa.selenium.Duration;", "import java.time.Duration;");
         KNOWN_FIXES.put("import org.openqa.selenium.support.ui.Duration;", "import java.time.Duration;");
         KNOWN_FIXES.put("@FindBy(linkText = \"\")", "// TODO: empty linkText — fix locator manually");
+        // JUnit to TestNG migration fixes
+        KNOWN_FIXES.put("import org.junit.jupiter.api.BeforeEach;", "");
+        KNOWN_FIXES.put("import org.junit.jupiter.api.AfterEach;", "");
+        KNOWN_FIXES.put("import org.junit.jupiter.api.BeforeAll;", "");
+        KNOWN_FIXES.put("import org.junit.jupiter.api.AfterAll;", "");
+        KNOWN_FIXES.put("import org.junit.jupiter.api.Test;", "");
+        KNOWN_FIXES.put("import org.junit.jupiter.api.Assertions;", "");
     }
 
     public Agent4_Reviewer() {
-        this.groqClient  = new GroqClient();
+        this.llmService  = new LLMService();
         this.modelConfig = ModelConfig.getInstance();
     }
 
@@ -149,7 +157,7 @@ public class Agent4_Reviewer {
                         " Could not fix: " + failed.getClassName());
             }
 
-            sleep(10000); // brief pause between LLM calls
+            sleep(0); // brief pause between LLM calls - set to 0 for Ollama local to reduce execution time
         }
 
         printSummary(compileResults.size(), totalFixed, llmCallCount, rulesFixCount);
@@ -175,11 +183,9 @@ public class Agent4_Reviewer {
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // SECTION 2 — SEVERITY LEVEL FIXES
-        // ═══════════════════════════════════════════════════════════════════
-        code = code.replace("SeverityLevel.MEDIUM",   "SeverityLevel.NORMAL");
-        code = code.replace("SeverityLevel.HIGH",     "SeverityLevel.CRITICAL");
-        code = code.replace("SeverityLevel.LOW",      "SeverityLevel.MINOR");
+        // SECTION 2 — SEVERITY LEVEL FIXES (NON-DUPLICATE — regex patterns only)
+        // SECTION 1 above already handles simple severity renames via KNOWN_FIXES.
+        // These no-ops document valid values that should NOT be flagged:
         code = code.replace("SeverityLevel.BLOCKER",  "SeverityLevel.BLOCKER");  // valid, keep
         code = code.replace("SeverityLevel.TRIVIAL",  "SeverityLevel.TRIVIAL");  // valid, keep
 
@@ -275,15 +281,8 @@ public class Agent4_Reviewer {
         // SECTION 5 — WRONG IMPORT FIXES
         // ═══════════════════════════════════════════════════════════════════
 
-        // Wrong Duration import
-        code = code.replace(
-            "import org.openqa.selenium.Duration;",
-            "import java.time.Duration;"
-        );
-        code = code.replace(
-            "import org.openqa.selenium.support.ui.Duration;",
-            "import java.time.Duration;"
-        );
+        // Note: import org.openqa.selenium.Duration → java.time.Duration
+        // is handled by the KNOWN_FIXES map in SECTION 1 above.
 
         // Wrong Assert import
         code = code.replace(
@@ -293,6 +292,31 @@ public class Agent4_Reviewer {
 
         // Invalid import alias syntax (import X as Y — not valid Java)
         code = code.replaceAll("import\\s+\\S+\\s+as\\s+\\S+;\\s*\\n?", "");
+
+        // Remove JUnit Test import when TestNG Test import is also present (to avoid ambiguity)
+        // Framework uses TestNG, so prefer TestNG annotations
+        if (code.contains("import org.testng.annotations.Test;") &&
+            code.contains("import org.junit.jupiter.api.Test;")) {
+            code = code.replace("import org.junit.jupiter.api.Test;", "");
+        }
+
+        // Remove JUnit lifecycle imports when TestNG equivalents are present
+        if (code.contains("import org.testng.annotations.BeforeMethod;") &&
+            code.contains("import org.junit.jupiter.api.BeforeEach;")) {
+            code = code.replace("import org.junit.jupiter.api.BeforeEach;", "");
+        }
+        if (code.contains("import org.testng.annotations.AfterMethod;") &&
+            code.contains("import org.junit.jupiter.api.AfterEach;")) {
+            code = code.replace("import org.junit.jupiter.api.AfterEach;", "");
+        }
+        if (code.contains("import org.testng.annotations.BeforeClass;") &&
+            code.contains("import org.junit.jupiter.api.BeforeAll;")) {
+            code = code.replace("import org.junit.jupiter.api.BeforeAll;", "");
+        }
+        if (code.contains("import org.testng.annotations.AfterClass;") &&
+            code.contains("import org.junit.jupiter.api.AfterAll;")) {
+            code = code.replace("import org.junit.jupiter.aAfterAll;", "");
+        }
 
         // Duplicate imports — remove exact duplicates
         code = removeDuplicateImports(code);
@@ -438,6 +462,20 @@ public class Agent4_Reviewer {
             "driver = WebDriverManager.edgedriver().create();"
         );
 
+        // Fix missing imports for generated POM classes in ui test classes
+        // Detect patterns like "ButtonPage page = new ButtonPage(driver);" or "ButtonPage page;"
+        // and add import pages.ButtonPage; if in generated.ui package
+        if (code.contains("package generated.ui;")) {
+            // ButtonPage usage detection
+            if (code.contains("ButtonPage ") && !code.contains("import pages.ButtonPage;")) {
+                code = addImport(code, "import pages.ButtonPage;");
+            }
+            // LinkPage usage detection
+            if (code.contains("LinkPage ") && !code.contains("import pages.LinkPage;")) {
+                code = addImport(code, "import pages.LinkPage;");
+            }
+        }
+
         return code;
     }
 
@@ -527,16 +565,23 @@ public class Agent4_Reviewer {
                         failed.getFilePath()
                 );
 
-                String fixedCode = groqClient.chat(
+                Map<String, Object> schema = LLMService.jsonSchema(
+                        Map.of("code", LLMService.stringProperty("Complete fixed Java source code")),
+                        List.of("code")
+                );
+                JsonObject toolResult = llmService.chatWithTools(
+                        "fix_code", "Fix Java compile errors and return the complete file",
+                        schema,
                         systemPrompt, userPrompt,
                         modelConfig.getAgent4Model(),
                         modelConfig.getAgent4Temperature(),
                         modelConfig.getAgent4MaxTokens()
                 );
+                String fixedCode = toolResult.has("code") && !toolResult.get("code").isJsonNull()
+                        ? toolResult.get("code").getAsString()
+                        : "";
 
                 if (fixedCode == null || fixedCode.isBlank()) continue;
-
-                fixedCode = cleanCode(fixedCode);
 
                 // Apply deterministic fixes on top of LLM fix
                 fixedCode = applyDeterministicFixes(fixedCode);
@@ -557,12 +602,12 @@ public class Agent4_Reviewer {
                         "   Still failing — " +
                         recompiled.getErrors().size() + " error(s)");
                 failed = recompiled;
-                sleep(15000);
+                sleep(0);
 
             } catch (Exception e) {
                 System.out.println(FrameworkConstants.LOG_ERROR +
                         "   LLM fix failed: " + e.getMessage());
-                sleep(30000);
+                sleep(0);
             }
         }
         return false;
@@ -640,12 +685,6 @@ public class Agent4_Reviewer {
     // ─────────────────────────────────────────────────────────────────────────
     // HELPERS
     // ─────────────────────────────────────────────────────────────────────────
-
-    private String cleanCode(String raw) {
-        if (raw == null) return "";
-        raw = raw.replaceAll("```java\\s*", "").replaceAll("```\\s*", "");
-        return raw.trim();
-    }
 
     private void saveFile(String filePath, String content) throws IOException {
         try (FileWriter writer = new FileWriter(filePath)) {

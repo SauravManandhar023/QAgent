@@ -46,6 +46,8 @@ public class DriverFactory {
         driver.manage().window().maximize();
 //        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(config.getImplicitWait()));
         driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(config.getPageLoadTimeout()));
+        // Script timeout is only needed for executeAsyncScript(), which we don't use
+        // We only use executeScript() (synchronous JS) in our code
 
         driverThread.set(driver);
         System.out.println(FrameworkConstants.LOG_SUCCESS + " Driver initialized successfully");
