@@ -1,0 +1,28 @@
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<suite name="QAgent Framework Unit Tests" verbose="2">
+
+    <test name="Model Tests">
+        <classes>
+            <class name="com.saurav.agentic.models.TestCaseTest"/>
+            <class name="com.saurav.agentic.models.CompileResultTest"/>
+            <class name="com.saurav.agentic.models.PageElementTest"/>
+            <class name="com.saurav.agentic.models.PageMetadataTest"/>
+        </classes>
+    </test>
+
+    <test name="Utility Tests">
+        <classes>
+            <class name="com.saurav.agentic.utils.ExcelUtilTest"/>
+            <class name="com.saurav.agentic.utils.PromptBuilderTest"/>
+            <class name="com.saurav.agentic.constants.FrameworkConstantsTest"/>
+            <class name="com.saurav.agentic.utils.LlmCacheTest"/>
+        </classes>
+    </test>
+
+    <test name="Application Model Tests">
+        <classes>
+            <class name="com.saurav.testapp.LoginAppTest"/>
+        </classes>
+    </test>
+
+</suite>

@@ -1,4 +1,4 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0"
+﻿<project xmlns="http://maven.apache.org/POM/4.0.0"
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
@@ -281,6 +281,27 @@
 									<outputFormat>XML</outputFormat>
 								</outputFormats>
 							</pluginConfiguration>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+
+		<!-- Framework Unit Tests Profile
+			 Run with: mvn test -P framework-tests
+			 Runs the framework unit tests (models, utils, constants, testapp).
+			 These are developer tests — NOT included in the default user-facing suite. -->
+		<profile>
+			<id>framework-tests</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-surefire-plugin</artifactId>
+						<configuration>
+							<suiteXmlFiles>
+								<suiteXmlFile>testng-framework.xml</suiteXmlFile>
+							</suiteXmlFiles>
 						</configuration>
 					</plugin>
 				</plugins>
