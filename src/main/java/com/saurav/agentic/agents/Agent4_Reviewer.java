@@ -560,50 +560,50 @@ public class Agent4_Reviewer {
         // Track imports to add
         Set<String> importsToAdd = new LinkedHashSet<>();
 
-        // Check for WebDriver usage
-        if (code.contains("WebDriver ") &&
+        // Check for WebDriver usage (as type or variable)
+        if (Pattern.compile("\\bWebDriver\\b").matcher(code).find() &&
             !code.contains("import org.openqa.selenium.WebDriver;")) {
             importsToAdd.add("import org.openqa.selenium.WebDriver;");
         }
 
         // Check for ChromeDriver usage
-        if (code.contains("ChromeDriver ") &&
+        if (Pattern.compile("\\bChromeDriver\\b").matcher(code).find() &&
             !code.contains("import org.openqa.selenium.chrome.ChromeDriver;")) {
             importsToAdd.add("import org.openqa.selenium.chrome.ChromeDriver;");
         }
 
         // Check for WebElement usage
-        if (code.contains("WebElement ") &&
+        if (Pattern.compile("\\bWebElement\\b").matcher(code).find() &&
             !code.contains("import org.openqa.selenium.WebElement;")) {
             importsToAdd.add("import org.openqa.selenium.WebElement;");
         }
 
-        // Check for By usage
-        if (code.contains("By ") &&
+        // Check for By usage (By.id, By.xpath, etc.)
+        if (Pattern.compile("\\bBy\\b").matcher(code).find() &&
             !code.contains("import org.openqa.selenium.By;")) {
             importsToAdd.add("import org.openqa.selenium.By;");
         }
 
         // Check for List usage
-        if ((code.contains("List<") || code.contains("List >")) &&
+        if (Pattern.compile("\\bList<").matcher(code).find() &&
             !code.contains("import java.util.List;")) {
             importsToAdd.add("import java.util.List;");
         }
 
         // Check for ArrayList usage
-        if ((code.contains("ArrayList<") || code.contains("ArrayList >")) &&
+        if (Pattern.compile("\\bArrayList<").matcher(code).find() &&
             !code.contains("import java.util.ArrayList;")) {
             importsToAdd.add("import java.util.ArrayList;");
         }
 
         // Check for Duration usage (java.time)
-        if ((code.contains("Duration ") || code.contains("Duration.of")) &&
+        if ((Pattern.compile("\\bDuration\\b").matcher(code).find()) &&
             !code.contains("import java.time.Duration;")) {
             importsToAdd.add("import java.time.Duration;");
         }
 
         // Check for PageFactory usage
-        if (code.contains("PageFactory ") &&
+        if (Pattern.compile("\\bPageFactory\\b").matcher(code).find() &&
             !code.contains("import org.openqa.selenium.support.PageFactory;")) {
             importsToAdd.add("import org.openqa.selenium.support.PageFactory;");
         }
@@ -615,13 +615,13 @@ public class Agent4_Reviewer {
         }
 
         // Check for ExpectedConditions usage
-        if (code.contains("ExpectedConditions ") &&
+        if (Pattern.compile("\\bExpectedConditions\\b").matcher(code).find() &&
             !code.contains("import org.openqa.selenium.support.ui.ExpectedConditions;")) {
             importsToAdd.add("import org.openqa.selenium.support.ui.ExpectedConditions;");
         }
 
         // Check for WebDriverWait usage
-        if (code.contains("WebDriverWait ") &&
+        if (Pattern.compile("\\bWebDriverWait\\b").matcher(code).find() &&
             !code.contains("import org.openqa.selenium.support.ui.WebDriverWait;")) {
             importsToAdd.add("import org.openqa.selenium.support.ui.WebDriverWait;");
         }
