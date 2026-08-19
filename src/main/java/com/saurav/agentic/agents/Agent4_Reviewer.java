@@ -4,8 +4,10 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -476,6 +478,9 @@ public class Agent4_Reviewer {
             }
         }
 
+        // Enhanced missing import detection - scans for common symbols and adds imports
+        code = addMissingImports(code);
+
         return code;
     }
 
@@ -536,6 +541,112 @@ public class Agent4_Reviewer {
         return code.substring(0, packageEnd + 1) +
                "\n" + importStatement +
                code.substring(packageEnd + 1);
+    }
+
+    /**
+     * Scans code for symbols used without corresponding imports and adds them.
+     * Enhanced version of addImport() that handles multiple missing imports in one pass.
+     */
+    private String addMissingImports(String code) {
+        if (code == null) return null;
+
+        // Find package declaration end
+        int packageEnd = code.indexOf(";\n", code.indexOf("package"));
+        if (packageEnd == -1) {
+            // No package declaration - add imports at beginning
+            packageEnd = -1; // Will insert at start
+        }
+
+        // Track imports to add
+        Set<String> importsToAdd = new LinkedHashSet<>();
+
+        // Check for WebDriver usage
+        if (code.contains("WebDriver ") &&
+            !code.contains("import org.openqa.selenium.WebDriver;")) {
+            importsToAdd.add("import org.openqa.selenium.WebDriver;");
+        }
+
+        // Check for ChromeDriver usage
+        if (code.contains("ChromeDriver ") &&
+            !code.contains("import org.openqa.selenium.chrome.ChromeDriver;")) {
+            importsToAdd.add("import org.openqa.selenium.chrome.ChromeDriver;");
+        }
+
+        // Check for WebElement usage
+        if (code.contains("WebElement ") &&
+            !code.contains("import org.openqa.selenium.WebElement;")) {
+            importsToAdd.add("import org.openqa.selenium.WebElement;");
+        }
+
+        // Check for By usage
+        if (code.contains("By ") &&
+            !code.contains("import org.openqa.selenium.By;")) {
+            importsToAdd.add("import org.openqa.selenium.By;");
+        }
+
+        // Check for List usage
+        if ((code.contains("List<") || code.contains("List >")) &&
+            !code.contains("import java.util.List;")) {
+            importsToAdd.add("import java.util.List;");
+        }
+
+        // Check for ArrayList usage
+        if ((code.contains("ArrayList<") || code.contains("ArrayList >")) &&
+            !code.contains("import java.util.ArrayList;")) {
+            importsToAdd.add("import java.util.ArrayList;");
+        }
+
+        // Check for Duration usage (java.time)
+        if ((code.contains("Duration ") || code.contains("Duration.of")) &&
+            !code.contains("import java.time.Duration;")) {
+            importsToAdd.add("import java.time.Duration;");
+        }
+
+        // Check for PageFactory usage
+        if (code.contains("PageFactory ") &&
+            !code.contains("import org.openqa.selenium.support.PageFactory;")) {
+            importsToAdd.add("import org.openqa.selenium.support.PageFactory;");
+        }
+
+        // Check for FindBy usage
+        if (code.contains("@FindBy") &&
+            !code.contains("import org.openqa.selenium.support.FindBy;")) {
+            importsToAdd.add("import org.openqa.selenium.support.FindBy;");
+        }
+
+        // Check for ExpectedConditions usage
+        if (code.contains("ExpectedConditions ") &&
+            !code.contains("import org.openqa.selenium.support.ui.ExpectedConditions;")) {
+            importsToAdd.add("import org.openqa.selenium.support.ui.ExpectedConditions;");
+        }
+
+        // Check for WebDriverWait usage
+        if (code.contains("WebDriverWait ") &&
+            !code.contains("import org.openqa.selenium.support.ui.WebDriverWait;")) {
+            importsToAdd.add("import org.openqa.selenium.support.ui.WebDriverWait;");
+        }
+
+        // If no imports to add, return original code
+        if (importsToAdd.isEmpty()) {
+            return code;
+        }
+
+        // Build imports block
+        StringBuilder importsBlock = new StringBuilder();
+        for (String imp : importsToAdd) {
+            importsBlock.append(imp).append("\n");
+        }
+
+        // Insert imports after package declaration
+        if (packageEnd == -1) {
+            // No package - insert at beginning
+            return importsBlock.toString() + code;
+        } else {
+            // Insert after package line
+            return code.substring(0, packageEnd + 1) +
+                   "\n" + importsBlock.toString() +
+                   code.substring(packageEnd + 1);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
