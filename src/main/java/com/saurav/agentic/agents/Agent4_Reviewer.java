@@ -550,11 +550,12 @@ public class Agent4_Reviewer {
     private String addMissingImports(String code) {
         if (code == null) return null;
 
-        // Find package declaration end
-        int packageEnd = code.indexOf(";\n", code.indexOf("package"));
-        if (packageEnd == -1) {
-            // No package declaration - add imports at beginning
-            packageEnd = -1; // Will insert at start
+        // Find package declaration end — look for "package ... ;"
+        int packageEnd = -1;
+        int packageStart = code.indexOf("package");
+        if (packageStart != -1) {
+            // Find the semicolon after package declaration
+            packageEnd = code.indexOf(";", packageStart);
         }
 
         // Track imports to add
