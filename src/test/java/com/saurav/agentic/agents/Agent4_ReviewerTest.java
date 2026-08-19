@@ -292,6 +292,7 @@ class Agent4_ReviewerTest {
         );
 
         String sourceCodeUsingSymbolsWithoutDeclaringImports =
+                "package pages;\n" +
                 "public class TestPage {\n" +
                 "    WebDriver driver;\n" +
                 "    WebElement element;\n" +
