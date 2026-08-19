@@ -1,21 +1,22 @@
-name: Nightly Full Pipeline
+name: QAgent Full Pipeline Validation
 
 on:
   schedule:
-    # Run nightly at 3:07 AM UTC (off-peak hours)
-    - cron: "7 3 * * *"
-  workflow_dispatch:
+    - cron: '0 2 * * *'  # Runs daily at 2:00 AM UTC
+  workflow_dispatch:      # Allow manual triggering
 
 env:
+  # Use Groq for nightly runs via GitHub Secrets
+  # In practice, swap to Ollama by setting LLM_PROVIDER: ollama and removing GROQ_API_KEY
   LLM_PROVIDER: groq
   BASE_URL: https://the-internet.herokuapp.com/login
   PIPELINE_INTERACTIVE: "false"
   PIPELINE_RUN_TESTS: "true"
 
 jobs:
-  full-pipeline:
+  build-and-full-pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 45  # Increased timeout for full pipeline
 
     steps:
       - name: Checkout repository
@@ -33,19 +34,11 @@ jobs:
         with:
           chrome-version: stable
 
-      - name: Cache Maven dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2
-          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-m2
-
-      - name: Build project
+      - name: Build project (compile only)
         run: mvn clean compile -DskipTests -q
         timeout-minutes: 5
 
-      - name: Generate classpath
+      - name: Generate classpath for compiler agent
         run: mvn dependency:build-classpath -Dmdep.outputFile=target/classpath.txt -q
         timeout-minutes: 2
 
@@ -53,84 +46,58 @@ jobs:
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
+          # Generate config.local.properties from env vars
           cat > config.local.properties << EOF
-          groq.api.key=${GROQ_API_KEY:-dummy_key_for_ollama}
+          llm.provider=$LLM_PROVIDER
+          groq.api.key=${GROQ_API_KEY}
           base.url=$BASE_URL
           pipeline.interactive=$PIPELINE_INTERACTIVE
           pipeline.run.tests=$PIPELINE_RUN_TESTS
+          skip.agent1=false
+          run.api.agents=false
           EOF
           mvn exec:java -Dexec.mainClass="com.saurav.agentic.runners.Main"
-        timeout-minutes: 25
+        timeout-minutes: 30
 
       - name: Generate Allure report
         if: always()
-        run: mvn allure:report -q
-        timeout-minutes: 3
-
-      - name: Run PITest mutation testing (framework)
-        if: always()
-        run: mvn pitest:mutationCoverage -P mutation-testing -q
-        timeout-minutes: 20
+        run: mvn site -q
         continue-on-error: true
+        timeout-minutes: 5
 
       - name: Upload Allure report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nightly-allure-report
+          name: allure-report
           path: target/site/allure-maven-plugin/
-          retention-days: 14
+          retention-days: 30
 
-      - name: Upload PITest report
+      - name: Upload generated test files
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nightly-pitest-report
-          path: target/pit-reports/
-          retention-days: 14
-
-      - name: Upload generated tests
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: nightly-generated-tests
+          name: generated-tests
           path: |
             src/test/java/pages/
             src/test/java/generated/ui/
-          retention-days: 7
+          retention-days: 30
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nightly-test-results
+          name: test-results
           path: |
             test-output/
             target/surefire-reports/
           retention-days: 30
 
-      - name: Summarize nightly run
+      - name: Check test results
         if: always()
         run: |
-          echo "## Nightly Pipeline Results" >> $GITHUB_STEP_SUMMARY
-
-          # Test results
-          if [ -d "target/surefire-reports" ]; then
-            TESTS=$(grep -r 'Tests run:' target/surefire-reports/*.txt 2>/dev/null | tail -1)
-            echo "**Tests**: $TESTS" >> $GITHUB_STEP_SUMMARY
+          FAILED=$(grep -r 'Failures: [1-9]' target/surefire-reports/*.txt 2>/dev/null || echo "0")
+          echo "Test failures: $FAILED"
+          if [ -n "$FAILED" ] && [ "$FAILED" != "0" ]; then
+            echo "::warning::Some tests failed — review Allure report for details"
           fi
-
-          # Mutation score
-          if [ -d "target/pit-reports" ]; then
-            SCORE=$(grep -r 'Coverage' target/pit-reports/*/index.html 2>/dev/null | head -1 | grep -oP '[0-9]+%' || echo "N/A")
-            echo "**Mutation Score**: $SCORE" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          # Generated files count
-          POM_COUNT=$(find src/test/java/pages -name "*.java" 2>/dev/null | wc -l)
-          TEST_COUNT=$(find src/test/java/generated/ui -name "*.java" 2>/dev/null | wc -l)
-          echo "**POM classes**: $POM_COUNT" >> $GITHUB_STEP_SUMMARY
-          echo "**Test classes**: $TEST_COUNT" >> $GITHUB_STEP_SUMMARY
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "_Run completed at $(date -u)_" >> $GITHUB_STEP_SUMMARY

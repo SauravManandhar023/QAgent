@@ -193,27 +193,55 @@ Tested on `https://the-internet.herokuapp.com/login`:
 - [ ] Agent 4 — API script generation
 - [ ] Human-in-the-loop prompt injection between Agent 1 and Agent 2
 - [ ] Per-component AI calls for complex sites
-- [ ] Allure reporting integration
-- [ ] GitHub Actions CI/CD
+- [x] Allure reporting integration
+- [x] GitHub Actions CI/CD
 - [ ] Discord notifications via n8n webhook
 
 ---
-
+ 
+## CI/CD Pipeline
+ 
+QAgent uses GitHub Actions for continuous integration and delivery:
+ 
+### Fast CI (PRs and Pushes to main)
+- Runs on every push and pull request to `main`
+- Executes only unit tests with mocked dependencies for fast feedback
+- Does not require external LLM provider (tests mock the LLM boundary)
+- Timeout: 15 minutes
+- Workflow: `.github/workflows/ci.yml`
+ 
+### Full Pipeline Validation
+- Runs daily at 2:00 AM UTC and can be manually triggered
+- Executes the full QAgent pipeline with real browser and LLM
+- Uses Groq API via GitHub Secrets (can be swapped to Ollama by changing LLM_PROVIDER)
+- Generates comprehensive Allure reports
+- Retains artifacts for 30 days
+- Timeout: 45 minutes
+- Workflow: `.github/workflows/nightly.yml`
+ 
+### Environment Variables
+Workflows support these overrides via repository secrets:
+- `LLM_PROVIDER`: groq (default for nightly), ollama, claude, openai, etc.
+- `GROQ_API_KEY`: Required when using Groq provider
+- `BASE_URL`: Test URL (defaults to the-internet.herokuapp.com/login)
+ 
+---
+ 
 ## Security
-
+ 
 - **Never commit** `config.local.properties` — it contains your Groq API key
 - The `.gitignore` already excludes it
 - Alternatively set your key as an environment variable: `GROQ_API_KEY=your_key`
-
+ 
 ---
-
+ 
 ## Author
-
+ 
 **Saurav Manandhar** — Junior QA Engineer  
 Building QAgent as a portfolio project to demonstrate agentic AI + test automation skills.
-
+ 
 ---
-
+ 
 ## License
-
+ 
 MIT License — free to use, modify, and share.

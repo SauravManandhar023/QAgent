@@ -172,7 +172,7 @@ public class Agent4_Reviewer {
      * Applies all known deterministic fixes without any LLM call.
      * Handles 80% of common compile errors instantly.
      */
-    private String applyDeterministicFixes(String code) {
+    String applyDeterministicFixes(String code) {
         if (code == null) return "";
 
         // ═══════════════════════════════════════════════════════════════════

@@ -7,19 +7,17 @@ on:
     branches: [main]
 
 env:
-  # Use Ollama for CI since it's free and has no rate limits.
-  # In practice, swap to Groq with a repo secret:
-  #   LLM_PROVIDER: groq
-  #   GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-  LLM_PROVIDER: groq
+  # Use a simple test URL for CI
   BASE_URL: https://the-internet.herokuapp.com/login
   PIPELINE_INTERACTIVE: "false"
   PIPELINE_RUN_TESTS: "true"
+  # Skip the full pipeline in CI - run only unit tests
+  SKIP_FULL_PIPELINE: "true"
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15  # Reduced timeout for faster CI
 
     steps:
       - name: Checkout repository
@@ -32,19 +30,6 @@ jobs:
           distribution: "temurin"
           cache: maven
 
-      - name: Setup Chrome for Selenium
-        uses: browser-actions/setup-chrome@v1
-        with:
-          chrome-version: stable
-
-      - name: Cache Maven dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2
-          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-m2
-
       - name: Build project (compile only)
         run: mvn clean compile -DskipTests -q
         timeout-minutes: 5
@@ -53,43 +38,9 @@ jobs:
         run: mvn dependency:build-classpath -Dmdep.outputFile=target/classpath.txt -q
         timeout-minutes: 2
 
-      - name: Run QAgent pipeline
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        run: |
-          # Generate config.local.properties from env vars
-          cat > config.local.properties << EOF
-          groq.api.key=${GROQ_API_KEY:-dummy_key_for_ollama}
-          base.url=$BASE_URL
-          pipeline.interactive=$PIPELINE_INTERACTIVE
-          pipeline.run.tests=$PIPELINE_RUN_TESTS
-          EOF
-          mvn exec:java -Dexec.mainClass="com.saurav.agentic.runners.Main"
-        timeout-minutes: 20
-
-      - name: Generate Allure report
-        if: always()
-        run: mvn allure:report -q
-        continue-on-error: true
-        timeout-minutes: 3
-
-      - name: Upload Allure report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: allure-report
-          path: target/site/allure-maven-plugin/
-          retention-days: 7
-
-      - name: Upload generated test files
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-tests
-          path: |
-            src/test/java/pages/
-            src/test/java/generated/ui/
-          retention-days: 7
+      - name: Run unit tests only (fast CI)
+        run: mvn test -q
+        timeout-minutes: 10
 
       - name: Upload test results
         if: always()
@@ -97,7 +48,6 @@ jobs:
         with:
           name: test-results
           path: |
-            test-output/
             target/surefire-reports/
           retention-days: 14
 
@@ -107,5 +57,6 @@ jobs:
           FAILED=$(grep -r 'Failures: [1-9]' target/surefire-reports/*.txt 2>/dev/null || echo "0")
           echo "Test failures: $FAILED"
           if [ -n "$FAILED" ] && [ "$FAILED" != "0" ]; then
-            echo "::warning::Some tests failed — review Allure report for details"
+            echo "::error::Unit tests failed"
+            exit 1
           fi
