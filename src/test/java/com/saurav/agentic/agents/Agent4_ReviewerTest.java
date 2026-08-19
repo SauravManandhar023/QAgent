@@ -6,7 +6,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.*;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -238,16 +242,15 @@ class Agent4_ReviewerTest {
     }
 
     @Test
-    void testRun_WithCompilationFailure_AppliesDeterministicFixes() {
+    void testRun_WithCompilationFailure_AppliesDeterministicFixes() throws Exception {
         // Arrange
-        // Create a CompileResult that represents a file with fixable errors
-        CompileResult result = new CompileResult(
-                "src/test/java/pages/TestPage.java",
-                "TestPage"
-        );
+        // Create a temporary directory and file for the test
+        Path tempDir = Files.createTempDirectory("agent4_test");
+        Path pagesDir = tempDir.resolve("pages");
+        Files.createDirectories(pagesDir);
+        Path testPagePath = pagesDir.resolve("TestPage.java");
 
-        // Set source code with a fixable error (old Selenium Duration import)
-        String sourceCode =
+        String sourceCodeWithFixableError =
                 "package pages;\n" +
                 "\n" +
                 "import org.openqa.selenium.Duration;\n" +
@@ -259,8 +262,15 @@ class Agent4_ReviewerTest {
                 "        waitTime = new Duration(10); // Note: This creates a separate error (wrong constructor) after import is fixed\n" +
                 "    }\n" +
                 "}";
-        result.setSourceCode(sourceCode);
-        // Note: We don't call setSuccess(true) because it starts as false by default
+        // Write the initial source code to the file
+        Files.writeString(testPagePath, sourceCodeWithFixableError);
+
+        // Create a CompileResult pointing to the temporary file
+        CompileResult result = new CompileResult(
+                testPagePath.toAbsolutePath().toString(),
+                "TestPage"
+        );
+        result.setSourceCode(sourceCodeWithFixableError);
 
         List<CompileResult> results = new ArrayList<>();
         results.add(result);
@@ -280,16 +290,19 @@ class Agent4_ReviewerTest {
             assertTrue(durationImportFixed || result.getSourceCode().contains("import org.openqa.selenium.Duration;"),
                     "Should have attempted to fix the Duration import (either succeeded or still has original)");
         }
+
+        // Clean up the temporary directory
+        deleteDirectory(tempDir);
     }
 
     @Test
-    void testRun_WithAlreadyValidCode_MayAddMissingImports() {
+    void testRun_WithAlreadyValidCode_MayAddMissingImports() throws Exception {
         // Arrange
-        // Create a CompileResult that represents a file that's valid but missing some imports
-        CompileResult result = new CompileResult(
-                "src/test/java/pages/TestPage.java",
-                "TestPage"
-        );
+        // Create a temporary directory and file for the test
+        Path tempDir = Files.createTempDirectory("agent4_test");
+        Path pagesDir = tempDir.resolve("pages");
+        Files.createDirectories(pagesDir);
+        Path testPagePath = pagesDir.resolve("TestPage.java");
 
         String sourceCodeUsingSymbolsWithoutDeclaringImports =
                 "package pages;\n" +
@@ -302,8 +315,15 @@ class Agent4_ReviewerTest {
                 "        element = driver.findElement(By.id(\"test\"));\n" +
                 "    }\n" +
                 "}";
+        // Write the initial source code to the file
+        Files.writeString(testPagePath, sourceCodeUsingSymbolsWithoutDeclaringImports);
+
+        // Create a CompileResult pointing to the temporary file
+        CompileResult result = new CompileResult(
+                testPagePath.toAbsolutePath().toString(),
+                "TestPage"
+        );
         result.setSourceCode(sourceCodeUsingSymbolsWithoutDeclaringImports);
-        // Note: This code would fail to compile without imports, but let's see what the reviewer does
 
         List<CompileResult> results = new ArrayList<>();
         results.add(result);
@@ -312,32 +332,46 @@ class Agent4_ReviewerTest {
         int fixedCount = reviewer.run(results);
 
         // Assert
-        // Should have added missing imports for the symbols used
+        // Should have processed the file
         assertTrue(fixedCount >= 0, "Should process the file (may fix missing imports)");
-        if (result.getSourceCode() != null) {
-            // Should have added WebDriver import
-            boolean hasWebDriverImport = result.getSourceCode().contains("import org.openqa.selenium.WebDriver;");
-            // Should have added ChromeDriver import
-            boolean hasChromeDriverImport = result.getSourceCode().contains("import org.openqa.selenium.chrome.ChromeDriver;");
-            // Should have added WebElement import
-            boolean hasWebElementImport = result.getSourceCode().contains("import org.openqa.selenium.WebElement;");
-            // Should have added By import
-            boolean hasByImport = result.getSourceCode().contains("import org.openqa.selenium.By;");
 
-            // At least some imports should have been added
-            assertTrue(hasWebDriverImport || hasChromeDriverImport || hasWebElementImport || hasByImport,
-                    "Should have added at least some missing imports for symbols used");
-        }
+        // Read the file after processing to see if imports were added
+        String fixedSourceCode = Files.readString(testPagePath);
+        assertNotNull(fixedSourceCode, "Source code should not be null after processing");
+
+        // Should have added at least some missing imports for the symbols used
+        boolean hasWebDriverImport = fixedSourceCode.contains("import org.openqa.selenium.WebDriver;");
+        boolean hasChromeDriverImport = fixedSourceCode.contains("import org.openqa.selenium.chrome.ChromeDriver;");
+        boolean hasWebElementImport = fixedSourceCode.contains("import org.openqa.selenium.WebElement;");
+        boolean hasByImport = fixedSourceCode.contains("import org.openqa.selenium.By;");
+
+        assertTrue(hasWebDriverImport || hasChromeDriverImport || hasWebElementImport || hasByImport,
+                "Should have added at least some missing imports for symbols used");
+
         // Should preserve the original code structure
-        assertTrue(result.getSourceCode().contains("public class TestPage"),
+        assertTrue(fixedSourceCode.contains("public class TestPage"),
                 "Should preserve class declaration");
-        assertTrue(result.getSourceCode().contains("WebDriver driver;"),
+        assertTrue(fixedSourceCode.contains("WebDriver driver;"),
                 "Should preserve field declarations");
-        assertTrue(result.getSourceCode().contains("WebElement element;"),
+        assertTrue(fixedSourceCode.contains("WebElement element;"),
                 "Should preserve field declarations");
-        assertTrue(result.getSourceCode().contains("driver = new ChromeDriver();"),
+        assertTrue(fixedSourceCode.contains("driver = new ChromeDriver();"),
                 "Should preserve driver initialization");
-        assertTrue(result.getSourceCode().contains("element = driver.findElement(By.id(\"test\"));"),
+        assertTrue(fixedSourceCode.contains("element = driver.findElement(By.id(\"test\"));"),
                 "Should preserve element lookup");
+
+        // Clean up the temporary directory (optional, as it's in the system temp and will be cleaned on exit)
+        // We'll delete it to leave no trace
+        deleteDirectory(tempDir);
+    }
+
+    // Helper method to delete a directory recursively
+    private void deleteDirectory(Path path) throws IOException {
+        if (Files.exists(path)) {
+            Files.walk(path)
+                 .sorted(Comparator.reverseOrder())
+                 .map(Path::toFile)
+                 .forEach(File::delete);
+        }
     }
 }
