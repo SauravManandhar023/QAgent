@@ -25,4 +25,11 @@
         </classes>
     </test>
 
+    <test name="Agent Tests">
+        <classes>
+            <class name="com.saurav.agentic.agents.Agent3_CompilerTest"/>
+            <class name="com.saurav.agentic.agents.Agent4_ReviewerTest"/>
+        </classes>
+    </test>
+
 </suite>

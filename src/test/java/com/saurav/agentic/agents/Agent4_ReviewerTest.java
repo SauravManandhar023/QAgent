@@ -221,7 +221,7 @@ class Agent4_ReviewerTest {
                 "Should preserve field declaration");
         assertTrue(fixedCode.contains("public TestClass(WebDriver driver)"),
                 "Should preserve constructor");
-        assertTrue(fixedCode.contains("Pagefactory.initElements(driver, this);"),
+        assertTrue(fixedCode.contains("PageFactory.initElements(driver, this);"),
                 "Should preserve PageFactory init");
     }
 
