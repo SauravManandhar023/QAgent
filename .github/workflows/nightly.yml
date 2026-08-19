@@ -59,6 +59,10 @@ jobs:
           mvn exec:java -Dexec.mainClass="com.saurav.agentic.runners.Main"
         timeout-minutes: 30
 
+      - name: Run framework unit tests
+        run: mvn test -Pframework-tests -q
+        timeout-minutes: 10
+
       - name: Generate Allure report
         if: always()
         run: mvn site -q

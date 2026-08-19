@@ -38,9 +38,11 @@ jobs:
         run: mvn dependency:build-classpath -Dmdep.outputFile=target/classpath.txt -q
         timeout-minutes: 2
 
-      - name: Run unit tests only (fast CI)
-        run: mvn test -q
-        timeout-minutes: 10
+      - name: Run unit tests (fast CI)
+        run: |
+          mvn test -q
+          mvn test -Pframework-tests -q
+        timeout-minutes: 20
 
       - name: Upload test results
         if: always()
