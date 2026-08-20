@@ -122,7 +122,12 @@ jobs:
           cat > config.local.properties << EOF
           llm.provider=$LLM_PROVIDER
           groq.api.key=${GROQ_API_KEY}
-          groq.model=openai/gpt-oss-120b
+          # Agent-specific model overrides
+          agent1.model=openai/gpt-oss-120b
+          agent2.pom.model=openai/gpt-oss-120b
+          agent2.test.model=openai/gpt-oss-120b
+          agent3.model=llama-3.1-8b-instant
+          agent4.model=llama-3.1-8b-instant
           base.url=$BASE_URL
           pipeline.interactive=$PIPELINE_INTERACTIVE
           pipeline.run.tests=$PIPELINE_RUN_TESTS
