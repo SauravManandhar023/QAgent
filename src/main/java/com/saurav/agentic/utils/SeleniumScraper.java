@@ -103,14 +103,20 @@ public class SeleniumScraper {
         analysis.append("=== FORMS (").append(forms.size()).append(") ===\n");
         for (int i = 0; i < forms.size(); i++) {
             Element form = forms.get(i);
-            analysis.append("Form ").append(i + 1).append(":\n");
-            analysis.append("  id=").append(form.attr("id")).append("\n");
-            analysis.append("  name=").append(form.attr("name")).append("\n");
-            analysis.append("  action=").append(form.attr("action")).append("\n");
-            analysis.append("  method=").append(form.attr("method")).append("\n");
+            // Use compact CSS selector-like format for better token efficiency
+            analysis.append("  - ").append(form.tagName());
+            String id = form.attr("id");
+            if (!id.isEmpty()) analysis.append("#").append(id);
+            String name = form.attr("name");
+            if (!name.isEmpty()) analysis.append("[name='").append(name).append("']");
+            String action = form.attr("action");
+            if (!action.isEmpty()) analysis.append("[action=\"").append(action).append("\"]");
+            String method = form.attr("method");
+            if (!method.isEmpty()) analysis.append("[method=").append(method).append("]");
+            analysis.append("\n");
 
             Elements formInputs = form.select("input, textarea, select");
-            analysis.append("  fields=").append(formInputs.size()).append("\n");
+            analysis.append("     fields: ").append(formInputs.size()).append("\n");
         }
         analysis.append("\n");
     }
@@ -124,16 +130,22 @@ public class SeleniumScraper {
             String type = input.attr("type").isEmpty() ? "text" : input.attr("type");
             if (type.equals("hidden") || type.equals("submit") || type.equals("button")) continue;
 
-            analysis.append("  - type=").append(type)
-                    .append(", id=").append(input.attr("id"))
-                    .append(", name=").append(input.attr("name"))
-                    .append(", placeholder=").append(input.attr("placeholder"))
-                    .append(", required=").append(input.hasAttr("required"))
-                    .append(", maxlength=").append(input.attr("maxlength"))
-                    .append(", pattern=").append(input.attr("pattern"))
-                    .append(", readonly=").append(input.hasAttr("readonly"))
-                    .append(", disabled=").append(input.hasAttr("disabled"))
-                    .append("\n");
+            // Use compact CSS selector-like format for better token efficiency
+            analysis.append("  - ").append(type);
+            String id = input.attr("id");
+            if (!id.isEmpty()) analysis.append("#").append(id);
+            String name = input.attr("name");
+            if (!name.isEmpty()) analysis.append("[name='").append(name).append("']");
+            String placeholder = input.attr("placeholder");
+            if (!placeholder.isEmpty()) analysis.append("(placeholder=\"").append(placeholder).append("\")");
+            if (input.hasAttr("required")) analysis.append(",required");
+            String maxlength = input.attr("maxlength");
+            if (!maxlength.isEmpty()) analysis.append(",maxlength=").append(maxlength);
+            String pattern = input.attr("pattern");
+            if (!pattern.isEmpty()) analysis.append(",pattern=\"").append(pattern).append("\"");
+            if (input.hasAttr("readonly")) analysis.append(",readonly");
+            if (input.hasAttr("disabled")) analysis.append(",disabled");
+            analysis.append("\n");
         }
         analysis.append("\n");
     }
@@ -144,12 +156,18 @@ public class SeleniumScraper {
 
         analysis.append("=== BUTTONS (").append(buttons.size()).append(") ===\n");
         for (Element btn : buttons) {
-            analysis.append("  - text='").append(btn.text().trim())
-                    .append("', id=").append(btn.attr("id"))
-                    .append(", type=").append(btn.attr("type"))
-                    .append(", class=").append(btn.attr("class"))
-                    .append(", disabled=").append(btn.hasAttr("disabled"))
-                    .append("\n");
+            // Use compact CSS selector-like format for better token efficiency
+            analysis.append("  - ").append(btn.tagName());
+            String text = btn.text().trim();
+            if (!text.isEmpty()) analysis.append("[text=\"").append(text).append("\"]");
+            String id = btn.attr("id");
+            if (!id.isEmpty()) analysis.append("#").append(id);
+            String type = btn.attr("type");
+            if (!type.isEmpty()) analysis.append("[type=").append(type).append("]");
+            String cls = btn.attr("class");
+            if (!cls.isEmpty()) analysis.append("[class=").append(cls).append("]");
+            if (btn.hasAttr("disabled")) analysis.append(",disabled");
+            analysis.append("\n");
         }
         analysis.append("\n");
     }
@@ -161,13 +179,19 @@ public class SeleniumScraper {
         analysis.append("=== LINKS (").append(links.size()).append(") ===\n");
         int count = 0;
         for (Element link : links) {
-            if (count >= 10) {
-                analysis.append("  ... and ").append(links.size() - 10).append(" more\n");
+            if (count >= 7) {  // Reduced from 10 to 7 to save tokens
+                analysis.append("  ... and ").append(links.size() - 7).append(" more\n");
                 break;
             }
-            analysis.append("  - text='").append(link.text().trim())
-                    .append("', href=").append(link.attr("href"))
-                    .append("\n");
+            // Use compact CSS selector-like format for better token efficiency
+            analysis.append("  - ").append(link.tagName());
+            String text = link.text().trim();
+            if (!text.isEmpty()) analysis.append("[text=\"").append(text).append("\"]");
+            String id = link.attr("id");
+            if (!id.isEmpty()) analysis.append("#").append(id);
+            String href = link.attr("href");
+            if (!href.isEmpty()) analysis.append("[href=\"").append(href).append("\"]");
+            analysis.append("\n");
             count++;
         }
         analysis.append("\n");
@@ -177,11 +201,17 @@ public class SeleniumScraper {
         Elements navLinks = doc.select("nav a, .nav a, .navbar a, .menu a, header a");
         if (navLinks.isEmpty()) return;
 
-        analysis.append("=== NAVIGATION (").append(navLinks.size()).append(" items) ===\n");
+        analysis.append("=== NAVIGATION (").append(navLinks.size()).append(") ===\n");
         for (Element link : navLinks) {
-            analysis.append("  - text='").append(link.text().trim())
-                    .append("', href=").append(link.attr("href"))
-                    .append("\n");
+            // Use compact CSS selector-like format for better token efficiency
+            analysis.append("  - ").append(link.tagName());
+            String text = link.text().trim();
+            if (!text.isEmpty()) analysis.append("[text=\"").append(text).append("\"]");
+            String id = link.attr("id");
+            if (!id.isEmpty()) analysis.append("#").append(id);
+            String href = link.attr("href");
+            if (!href.isEmpty()) analysis.append("[href=\"").append(href).append("\"]");
+            analysis.append("\n");
         }
         analysis.append("\n");
     }
@@ -193,15 +223,30 @@ public class SeleniumScraper {
         analysis.append("=== TABLES (").append(tables.size()).append(") ===\n");
         for (int i = 0; i < tables.size(); i++) {
             Element table = tables.get(i);
+            // Use compact CSS selector-like format for better token efficiency
+            analysis.append("  - ").append(table.tagName());
+            String id = table.attr("id");
+            if (!id.isEmpty()) analysis.append("#").append(id);
+            // We don't usually need to show name for tables
+            analysis.append("\n");
+
             Elements headers = table.select("th");
             Elements rows = table.select("tr");
-            analysis.append("  Table ").append(i + 1).append(":\n");
-            analysis.append("    columns=").append(headers.size())
-                    .append(", rows=").append(rows.size()).append("\n");
+            analysis.append("     rows: ").append(rows.size()).append(", columns: ").append(headers.size()).append("\n");
             if (!headers.isEmpty()) {
-                analysis.append("    headers: ");
-                headers.forEach(h -> analysis.append(h.text()).append(", "));
-                analysis.append("\n");
+                analysis.append("     headers: [");
+                headers.forEach(h -> {
+                    String hText = h.text().trim();
+                    if (!hText.isEmpty()) analysis.append('"').append(hText).append("\", ");
+                });
+                if (headers.size() > 0) {
+                    // Remove the trailing ", "
+                    int len = analysis.length();
+                    if (len >= 2 && analysis.substring(len-2).equals(", ")) {
+                        analysis.delete(len-2, len);
+                    }
+                }
+                analysis.append("]\n");
             }
         }
         analysis.append("\n");
@@ -214,17 +259,24 @@ public class SeleniumScraper {
         analysis.append("=== DROPDOWNS (").append(selects.size()).append(") ===\n");
         for (Element select : selects) {
             Elements options = select.select("option");
-            analysis.append("  - id=").append(select.attr("id"))
-                    .append(", name=").append(select.attr("name"))
-                    .append(", options=").append(options.size())
-                    .append(", required=").append(select.hasAttr("required"))
-                    .append("\n");
-            // List first 5 options
+            // Use compact CSS selector-like format for better token efficiency
+            analysis.append("  - ").append(select.tagName());
+            String id = select.attr("id");
+            if (!id.isEmpty()) analysis.append("#").append(id);
+            String name = select.attr("name");
+            if (!name.isEmpty()) analysis.append("[name='").append(name).append("']");
+            if (select.hasAttr("required")) analysis.append(",required");
+            analysis.append(",options=").append(options.size()).append("\n");
+            // List first 3 options (reduced from 5 to save tokens)
             int optCount = 0;
             for (Element opt : options) {
-                if (optCount >= 5) break;
-                analysis.append("    option: value='").append(opt.attr("value"))
-                        .append("', text='").append(opt.text()).append("'\n");
+                if (optCount >= 3) break;
+                analysis.append("    - ").append(opt.tagName());
+                String value = opt.attr("value");
+                if (!value.isEmpty()) analysis.append("[value=\"").append(value).append("\"]");
+                String text = opt.text().trim();
+                if (!text.isEmpty()) analysis.append("[text=\"").append(text).append("\"]");
+                analysis.append("\n");
                 optCount++;
             }
         }
@@ -238,11 +290,16 @@ public class SeleniumScraper {
         if (!checkboxes.isEmpty()) {
             analysis.append("=== CHECKBOXES (").append(checkboxes.size()).append(") ===\n");
             for (Element cb : checkboxes) {
-                analysis.append("  - id=").append(cb.attr("id"))
-                        .append(", name=").append(cb.attr("name"))
-                        .append(", value=").append(cb.attr("value"))
-                        .append(", checked=").append(cb.hasAttr("checked"))
-                        .append("\n");
+                // Use compact CSS selector-like format for better token efficiency
+                analysis.append("  - ").append(cb.tagName()).append("[type=checkbox]");
+                String id = cb.attr("id");
+                if (!id.isEmpty()) analysis.append("#").append(id);
+                String name = cb.attr("name");
+                if (!name.isEmpty()) analysis.append("[name='").append(name).append("']");
+                String value = cb.attr("value");
+                if (!value.isEmpty()) analysis.append("[value=\"").append(value).append("\"]");
+                if (cb.hasAttr("checked")) analysis.append(",checked");
+                analysis.append("\n");
             }
             analysis.append("\n");
         }
@@ -250,10 +307,15 @@ public class SeleniumScraper {
         if (!radios.isEmpty()) {
             analysis.append("=== RADIO BUTTONS (").append(radios.size()).append(") ===\n");
             for (Element rb : radios) {
-                analysis.append("  - id=").append(rb.attr("id"))
-                        .append(", name=").append(rb.attr("name"))
-                        .append(", value=").append(rb.attr("value"))
-                        .append("\n");
+                // Use compact CSS selector-like format for better token efficiency
+                analysis.append("  - ").append(rb.tagName()).append("[type=radio]");
+                String id = rb.attr("id");
+                if (!id.isEmpty()) analysis.append("#").append(id);
+                String name = rb.attr("name");
+                if (!name.isEmpty()) analysis.append("[name='").append(name).append("']");
+                String value = rb.attr("value");
+                if (!value.isEmpty()) analysis.append("[value=\"").append(value).append("\"]");
+                analysis.append("\n");
             }
             analysis.append("\n");
         }
@@ -268,9 +330,13 @@ public class SeleniumScraper {
 
         analysis.append("=== SEARCH FUNCTIONALITY ===\n");
         for (Element search : searchInputs) {
-            analysis.append("  - id=").append(search.attr("id"))
-                    .append(", placeholder=").append(search.attr("placeholder"))
-                    .append("\n");
+            // Use compact CSS selector-like format for better token efficiency
+            analysis.append("  - ").append(search.tagName());
+            String id = search.attr("id");
+            if (!id.isEmpty()) analysis.append("#").append(id);
+            String placeholder = search.attr("placeholder");
+            if (!placeholder.isEmpty()) analysis.append("(placeholder=\"").append(placeholder).append("\")");
+            analysis.append("\n");
         }
         analysis.append("\n");
     }
@@ -289,8 +355,13 @@ public class SeleniumScraper {
 
         analysis.append("=== ALERT/MESSAGE AREAS (").append(alerts.size()).append(") ===\n");
         for (Element alert : alerts) {
-            analysis.append("  - class=").append(alert.attr("class"))
-                    .append(", id=").append(alert.attr("id")).append("\n");
+            // Use compact CSS selector-like format for better token efficiency
+            analysis.append("  - ").append(alert.tagName());
+            String id = alert.attr("id");
+            if (!id.isEmpty()) analysis.append("#").append(id);
+            String cls = alert.attr("class");
+            if (!cls.isEmpty()) analysis.append("[class=").append(cls).append("]");
+            analysis.append("\n");
         }
         analysis.append("\n");
     }
@@ -301,8 +372,13 @@ public class SeleniumScraper {
 
         analysis.append("=== MODALS/DIALOGS (").append(modals.size()).append(") ===\n");
         for (Element modal : modals) {
-            analysis.append("  - id=").append(modal.attr("id"))
-                    .append(", class=").append(modal.attr("class")).append("\n");
+            // Use compact CSS selector-like format for better token efficiency
+            analysis.append("  - ").append(modal.tagName());
+            String id = modal.attr("id");
+            if (!id.isEmpty()) analysis.append("#").append(id);
+            String cls = modal.attr("class");
+            if (!cls.isEmpty()) analysis.append("[class=").append(cls).append("]");
+            analysis.append("\n");
         }
         analysis.append("\n");
     }
@@ -311,14 +387,14 @@ public class SeleniumScraper {
         analysis.append("=== PAGE META ===\n");
         Elements metaDesc = doc.select("meta[name=description]");
         if (!metaDesc.isEmpty()) {
-            analysis.append("  Description: ").append(metaDesc.first().attr("content")).append("\n");
+            analysis.append("  meta[name=description]=\"").append(metaDesc.first().attr("content")).append("\"\n");
         }
         Elements h1 = doc.select("h1");
         if (!h1.isEmpty()) {
-            analysis.append("  H1: ").append(h1.first().text()).append("\n");
+            analysis.append("  h1: ").append(h1.first().text()).append("\n");
         }
         Elements h2 = doc.select("h2");
-        analysis.append("  H2 count: ").append(h2.size()).append("\n");
+        analysis.append("  h2 count: ").append(h2.size()).append("\n");
         analysis.append("\n");
     }
 
