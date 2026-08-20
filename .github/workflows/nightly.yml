@@ -122,6 +122,7 @@ jobs:
           cat > config.local.properties << EOF
           llm.provider=$LLM_PROVIDER
           groq.api.key=${GROQ_API_KEY}
+          groq.model=openai/gpt-oss-120b
           base.url=$BASE_URL
           pipeline.interactive=$PIPELINE_INTERACTIVE
           pipeline.run.tests=$PIPELINE_RUN_TESTS
