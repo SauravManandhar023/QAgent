@@ -35,28 +35,27 @@ jobs:
         run: |
           echo "🔐 Testing Groq API key model access (securely)..."
 
-          # Test preferred model first: llama-3.1-70b-versatile
+          # Test preferred model first: llama-3.2-90b-vision-preview (latest available)
           RESPONSE=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $GROQ_API_KEY" \
             -d '{
-              "model": "llama-3.1-70b-versatile",
+              "model": "llama-3.2-90b-vision-preview",
               "messages": [{"role": "user", "content": "test"}],
               "max_tokens": 5
             }' || echo "NETWORK_ERROR")
 
           if echo "$RESPONSE" | grep -q '"error"'; then
             ERROR_MSG=$(echo "$RESPONSE" | grep -o '"message":"[^"]*"' | cut -d'"' -f4)
-            echo "❌ llama-3.1-70b-versatile: NOT ACCESSIBLE"
+            echo "❌ llama-3.2-90b-vision-preview: NOT ACCESSIBLE"
             echo "   Reason: $ERROR_MSG"
 
             echo "--- Testing fallback models ---"
 
             # Test fallback models in order
             FALLBACK_MODELS=(
-              "llama-3.1-8b-instant"       # Fast 8B (current fallback in code)
-              "mixtral-8x7b-32768"         # MoE model
-              "gemma2-9b-it"               # Google Gemma 2
+              "llama-3.1-70b-versatile"      # Alternative if newer unavailable
+              "llama-3.1-8b-instant"         # Fast 8B
             )
 
             SELECTED_MODEL=""
@@ -66,8 +65,8 @@ jobs:
                 -H "Authorization: Bearer $GROQ_API_KEY" \
                 -d "{
                   \"model\": \"$model\",
-                  \"messages\": [{\"role\": \"user\", \"content\": \"Hi\"}],
-                  \"max_tokens\": 5
+                  \"messages\": [{"role": "user", "content": "Hi"}],
+                  "max_tokens": 5
                 }" || echo "NETWORK_ERROR")
 
               if echo "$RESPONSE" | grep -q '"error"'; then
@@ -91,11 +90,11 @@ jobs:
               exit 1
             fi
           else
-            echo "✅ llama-3.1-70b-versatile: ACCESSIBLE"
-            SELECTED_MODEL="llama-3.1-70b-versatile"
+            echo "✅ llama-3.2-90b-vision-preview: ACCESSIBLE"
+            SELECTED_MODEL="llama-3.2-90b-vision-preview"
             echo "---"
-            echo "🎯 SELECTED MODEL: llama-3.1-70b-versatile"
-            echo "   (matches your preference)"
+            echo "🎯 SELECTED MODEL: llama-3.2-90b-vision-preview"
+            echo "   (your preferred model)"
           fi
 
           # Export selected model for potential use in later steps (optional)
@@ -122,7 +121,7 @@ jobs:
           cat > config.local.properties << EOF
           llm.provider=$LLM_PROVIDER
           groq.api.key=${GROQ_API_KEY}
-          groq.model=openai/gpt-oss-120b
+          groq.model=llama-3.2-90b-vision-preview
           base.url=$BASE_URL
           pipeline.interactive=$PIPELINE_INTERACTIVE
           pipeline.run.tests=$PIPELINE_RUN_TESTS
