@@ -29,6 +29,78 @@ jobs:
           distribution: "temurin"
           cache: maven
 
+      - name: Test Groq Model Access (Secure)
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          echo "🔐 Testing Groq API key model access (securely)..."
+
+          # Test preferred model first: llama-3.1-70b-versatile
+          RESPONSE=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $GROQ_API_KEY" \
+            -d '{
+              "model": "llama-3.1-70b-versatile",
+              "messages": [{"role": "user", "content": "test"}],
+              "max_tokens": 5
+            }' || echo "NETWORK_ERROR")
+
+          if echo "$RESPONSE" | grep -q '"error"'; then
+            ERROR_MSG=$(echo "$RESPONSE" | grep -o '"message":"[^"]*"' | cut -d'"' -f4)
+            echo "❌ llama-3.1-70b-versatile: NOT ACCESSIBLE"
+            echo "   Reason: $ERROR_MSG"
+
+            echo "--- Testing fallback models ---"
+
+            # Test fallback models in order
+            FALLBACK_MODELS=(
+              "llama-3.1-8b-instant"       # Fast 8B (current fallback in code)
+              "mixtral-8x7b-32768"         # MoE model
+              "gemma2-9b-it"               # Google Gemma 2
+            )
+
+            SELECTED_MODEL=""
+            for model in "${FALLBACK_MODELS[@]}"; do
+              RESPONSE=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" \
+                -H "Content-Type: application/json" \
+                -H "Authorization: Bearer $GROQ_API_KEY" \
+                -d "{
+                  \"model\": \"$model\",
+                  \"messages\": [{\"role\": \"user\", \"content\": \"Hi\"}],
+                  \"max_tokens\": 5
+                }" || echo "NETWORK_ERROR")
+
+              if echo "$RESPONSE" | grep -q '"error"'; then
+                ERROR_MSG=$(echo "$RESPONSE" | grep -o '"message":"[^"]*"' | cut -d'"' -f4)
+                echo "❌ $model: NOT ACCESSIBLE ($ERROR_MSG)"
+              else
+                echo "✅ $model: ACCESSIBLE"
+                SELECTED_MODEL="$model"
+                break
+              fi
+            done
+
+            if [ -n "$SELECTED_MODEL" ]; then
+              echo "---"
+              echo "🎯 SELECTED MODEL: $SELECTED_MODEL"
+              echo "   (will be used to update workflow configuration)"
+            else
+              echo "---"
+              echo "❌ ERROR: No accessible models found!"
+              echo "   Please check your Groq account permissions at https://console.groq.com/"
+              exit 1
+            fi
+          else
+            echo "✅ llama-3.1-70b-versatile: ACCESSIBLE"
+            SELECTED_MODEL="llama-3.1-70b-versatile"
+            echo "---"
+            echo "🎯 SELECTED MODEL: llama-3.1-70b-versatile"
+            echo "   (matches your preference)"
+          fi
+
+          # Export selected model for potential use in later steps (optional)
+          echo "SELECTED_GROQ_MODEL=$SELECTED_MODEL" >> $GITHUB_ENV
+
       - name: Setup Chrome for Selenium
         uses: browser-actions/setup-chrome@v1
         with:
